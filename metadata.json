@@ -1,0 +1,6 @@
+{
+  "name": "Material Chess",
+  "description": "A premium, modern Material Design 3 Chess application dashboard with interactive gameplay, engine analysis, custom settings, and statistics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
