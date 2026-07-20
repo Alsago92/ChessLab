@@ -133,6 +133,17 @@ export default function App() {
 
   // Game configuration
   const [gameMode, setGameMode] = useState<GameMode>('local');
+  
+  // Real-time WebSocket matchmaking state definitions
+  const wsRef = useRef<WebSocket | null>(null);
+  const [wsStatus, setWsStatus] = useState<'disconnected' | 'connecting' | 'waiting' | 'connected'>('disconnected');
+  const [wsError, setWsError] = useState<string | null>(null);
+  const [wsActiveGameId, setWsActiveGameId] = useState<string | null>(null);
+  const [onlinePlayerColor, setOnlinePlayerColor] = useState<'w' | 'b' | null>(null);
+  const [wsOpponentNickname, setWsOpponentNickname] = useState<string>('');
+  const [inGameDrawOffered, setInGameDrawOffered] = useState<boolean>(false);
+  const [inGameRematchOffered, setInGameRematchOffered] = useState<boolean>(false);
+
   const [gameStatus, setGameStatus] = useState<'active' | 'checkmate' | 'stalemate' | 'draw' | 'resigned' | 'timeout'>('active');
   const [winner, setWinner] = useState<'white' | 'black' | 'draw' | null>(null);
   const [endReason, setEndReason] = useState<string>('');
@@ -655,6 +666,11 @@ export default function App() {
     const chess = chessRef.current;
     const piece = chess.get(square as any);
 
+    // If online WebSocket mode, enforce piece color selection based on assigned color
+    if (wsStatus === 'connected' && piece && piece.color !== onlinePlayerColor) {
+      return;
+    }
+
     if (piece && piece.color === turn) {
       setSelectedSquare(square);
       // Query moves
@@ -670,6 +686,14 @@ export default function App() {
   const handleMove = (from: string, to: string, promotion: string = 'q') => {
     const chess = chessRef.current;
 
+    // Enforce real-time turn constraint if connected online
+    if (wsStatus === 'connected' && turn !== onlinePlayerColor) {
+      addCoachMessage(settings.language === 'es'
+        ? 'No es tu turno. Espera al oponente.'
+        : 'It is not your turn. Wait for the opponent.');
+      return;
+    }
+
     try {
       const piece = chess.get(from as any);
       const isCapture = !!chess.get(to as any);
@@ -684,6 +708,16 @@ export default function App() {
       // Reset selection highlights
       setSelectedSquare(null);
       setPossibleMoves([]);
+
+      // Propagate move via WebSocket if connected
+      if (wsStatus === 'connected' && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'make-move',
+          gameId: wsActiveGameId,
+          move: { from, to, promotion },
+          fen: chess.fen(),
+        }));
+      }
 
       // Play matching haptic sounds
       playChessSound(isCapture ? 'capture' : 'move', settings.soundEffects);
@@ -806,8 +840,16 @@ export default function App() {
   // Resign match
   const handleResign = () => {
     if (gameStatus !== 'active') return;
+
+    if (wsStatus === 'connected' && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'resign' }));
+    }
+
     setGameStatus('resigned');
-    const resignWinner = turn === 'w' ? 'black' : 'white';
+    // In multiplayer, the winner is whoever color is NOT the local player color, or default
+    const resignWinner = wsStatus === 'connected'
+      ? (onlinePlayerColor === 'w' ? 'black' : 'white')
+      : (turn === 'w' ? 'black' : 'white');
     setWinner(resignWinner);
     
     const playerColor = turn === 'w' 
@@ -828,6 +870,17 @@ export default function App() {
   // Draw offer
   const handleOfferDraw = () => {
     if (gameStatus !== 'active') return;
+
+    if (wsStatus === 'connected') {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'offer-draw' }));
+        addCoachMessage(settings.language === 'es'
+          ? 'Has ofrecido tablas al oponente. Esperando respuesta...'
+          : 'You offered a draw to your opponent. Waiting for response...');
+      }
+      return;
+    }
+
     setGameStatus('draw');
     setWinner('draw');
     setEndReason(settings.language === 'es' ? 'Tablas por mutuo acuerdo' : 'Draw by mutual agreement');
@@ -859,6 +912,322 @@ export default function App() {
         setBoard(reviewChess.board());
         setTurn(reviewChess.turn());
       }
+    }
+  };
+
+  // Real-time WebSocket match handler
+  const handleWebSocketAction = (action: {
+    type: 'create' | 'join' | 'cancel';
+    nickname: string;
+    gameId?: string;
+    preferredColor?: 'w' | 'b' | 'random';
+  }) => {
+    // If cancel action
+    if (action.type === 'cancel') {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setWsStatus('disconnected');
+      setWsError(null);
+      setWsActiveGameId(null);
+      setOnlinePlayerColor(null);
+      return;
+    }
+
+    try {
+      // Connect WS
+      setWsStatus('connecting');
+      setWsError(null);
+
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}`;
+      const socket = new WebSocket(wsUrl);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        if (action.type === 'create') {
+          socket.send(JSON.stringify({
+            type: 'create-game',
+            nickname: action.nickname,
+            preferredColor: action.preferredColor,
+          }));
+        } else if (action.type === 'join') {
+          socket.send(JSON.stringify({
+            type: 'join-game',
+            gameId: action.gameId,
+            nickname: action.nickname,
+          }));
+        }
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          switch (data.type) {
+            case 'game-created':
+              setWsStatus('waiting');
+              setWsActiveGameId(data.gameId);
+              setOnlinePlayerColor(data.playerColor);
+              setIsFlipped(data.playerColor === 'b');
+              break;
+
+            case 'game-joined': {
+              setWsStatus('connected');
+              setWsActiveGameId(data.gameId);
+              setOnlinePlayerColor(data.playerColor);
+              setIsFlipped(data.playerColor === 'b');
+              
+              // Set up initial board
+              const chess = new Chess(data.fen);
+              chessRef.current = chess;
+              setBoard(chess.board());
+              setTurn(chess.turn());
+              setSelectedSquare(null);
+              setPossibleMoves([]);
+              setLastMove(null);
+              setCheckSquare(null);
+              setHistoryStack([]);
+              setRedoStack([]);
+              setActiveMoveIndex(-1);
+              setOpeningName('Standard Theory');
+              setWhiteTime(600);
+              setBlackTime(600);
+              setActiveTurn('w');
+              setGameStatus('active');
+              setWinner(null);
+              setEndReason('');
+              setGameMode('online'); // Reuse online screen
+
+              // Update players info
+              setWhitePlayer({
+                name: data.whiteNickname || 'White Player',
+                rating: 1500,
+                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+              });
+              setBlackPlayer({
+                name: data.blackNickname || 'Black Player',
+                rating: 1500,
+                avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
+              });
+
+              addCoachMessage(settings.language === 'es'
+                ? `Te has unido a la partida ${data.gameId}. ¡Suerte!`
+                : `Joined match ${data.gameId}. Good luck!`);
+              
+              changeScreen('game');
+              break;
+            }
+
+            case 'opponent-joined': {
+              setWsStatus('connected');
+              
+              // Set up initial board
+              const chess = new Chess();
+              chessRef.current = chess;
+              setBoard(chess.board());
+              setTurn('w');
+              setSelectedSquare(null);
+              setPossibleMoves([]);
+              setLastMove(null);
+              setCheckSquare(null);
+              setHistoryStack([]);
+              setRedoStack([]);
+              setActiveMoveIndex(-1);
+              setOpeningName('Standard Theory');
+              setWhiteTime(600);
+              setBlackTime(600);
+              setActiveTurn('w');
+              setGameStatus('active');
+              setWinner(null);
+              setEndReason('');
+              setGameMode('online');
+
+              // Update players info
+              setWhitePlayer({
+                name: data.whiteNickname || userProfile.name,
+                rating: playerStats.currentRating,
+                avatar: userProfile.avatar,
+              });
+              setBlackPlayer({
+                name: data.blackNickname || data.opponentNickname || 'Opponent',
+                rating: 1500,
+                avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
+              });
+
+              addCoachMessage(settings.language === 'es'
+                ? `¡El oponente ${data.opponentNickname} se ha unido! Comienza la partida.`
+                : `Opponent ${data.opponentNickname} joined! Match begins.`);
+
+              changeScreen('game');
+              break;
+            }
+
+            case 'opponent-moved': {
+              const chess = chessRef.current;
+              const result = chess.move(data.move);
+              if (result) {
+                // Play sounds
+                const isCapture = result.captured;
+                playChessSound(isCapture ? 'capture' : 'move', settings.soundEffects);
+
+                const historyItem: MoveHistoryItem = {
+                  san: result.san,
+                  from: result.from,
+                  to: result.to,
+                  piece: result.piece,
+                  color: result.color,
+                  fenAfter: chess.fen(),
+                  moveNumber: Math.floor(historyStack.length / 2) + 1,
+                };
+
+                setHistoryStack((prev) => [...prev, historyItem]);
+                setLastMove({ from: result.from, to: result.to });
+                setRedoStack([]);
+                
+                // Swap clock turns
+                setActiveTurn(chess.turn());
+                updateEngineState();
+
+                // Check alerts
+                if (chess.inCheck()) {
+                  playChessSound('check', settings.soundEffects);
+                }
+              }
+              break;
+            }
+
+            case 'opponent-resigned': {
+              setGameStatus('resigned');
+              const localIsWhite = onlinePlayerColor === 'w';
+              setWinner(localIsWhite ? 'white' : 'black');
+              setEndReason(settings.language === 'es'
+                ? 'El oponente se ha rendido. ¡Has ganado!'
+                : 'The opponent resigned. You win!');
+              playChessSound('gameover', settings.soundEffects);
+              recordGameResult('win');
+              break;
+            }
+
+            case 'draw-offered':
+              setInGameDrawOffered(true);
+              addCoachMessage(settings.language === 'es'
+                ? 'El oponente ofrece tablas (empate).'
+                : 'Opponent offered a draw.');
+              break;
+
+            case 'draw-responded':
+              if (data.accepted) {
+                setGameStatus('draw');
+                setWinner('draw');
+                setEndReason(settings.language === 'es'
+                  ? 'Tablas por acuerdo mutuo.'
+                  : 'Game drawn by mutual agreement.');
+                playChessSound('gameover', settings.soundEffects);
+                recordGameResult('draw');
+              } else {
+                setInGameDrawOffered(false);
+                addCoachMessage(settings.language === 'es'
+                  ? 'Oferta de tablas rechazada.'
+                  : 'Draw offer declined.');
+              }
+              break;
+
+            case 'rematch-offered':
+              setInGameRematchOffered(true);
+              addCoachMessage(settings.language === 'es'
+                ? 'El oponente propone revancha.'
+                : 'Opponent offered a rematch.');
+              break;
+
+            case 'rematch-responded':
+              if (data.accepted) {
+                // Reset board
+                const chess = new Chess();
+                chessRef.current = chess;
+                setBoard(chess.board());
+                setTurn('w');
+                setSelectedSquare(null);
+                setPossibleMoves([]);
+                setLastMove(null);
+                setCheckSquare(null);
+                setHistoryStack([]);
+                setRedoStack([]);
+                setActiveMoveIndex(-1);
+                setOpeningName('Standard Theory');
+                setWhiteTime(600);
+                setBlackTime(600);
+                setActiveTurn('w');
+                setGameStatus('active');
+                setWinner(null);
+                setEndReason('');
+                setInGameRematchOffered(false);
+                addCoachMessage(settings.language === 'es'
+                  ? 'Revancha iniciada.'
+                  : 'Rematch started.');
+              } else {
+                setInGameRematchOffered(false);
+                addCoachMessage(settings.language === 'es'
+                  ? 'Propuesta de revancha rechazada.'
+                  : 'Rematch offer declined.');
+              }
+              break;
+
+            case 'chat-message': {
+              const chatMsg: ChatMessage = {
+                id: `chat-${Date.now()}-${Math.random()}`,
+                sender: data.nickname || 'Guest',
+                text: data.text || '',
+                timestamp: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+              };
+              setChatMessages((prev) => [...prev, chatMsg]);
+              break;
+            }
+
+            case 'opponent-disconnected':
+              addCoachMessage(settings.language === 'es'
+                ? 'El oponente se desconectó.'
+                : 'Opponent disconnected.');
+              setGameStatus('resigned');
+              setWinner(onlinePlayerColor === 'w' ? 'white' : 'black');
+              setEndReason(settings.language === 'es'
+                ? 'Victoria por abandono (desconexión).'
+                : 'Victory by abandonment (disconnection).');
+              break;
+
+            case 'error':
+              setWsError(data.message || 'Error desconocido.');
+              setWsStatus('disconnected');
+              break;
+          }
+        } catch (err) {
+          console.error('Error parsing WS message:', err);
+        }
+      };
+
+      socket.onerror = (err) => {
+        console.error('WebSocket Error:', err);
+        setWsError(settings.language === 'es'
+          ? 'Error al conectar con el servidor.'
+          : 'Failed to connect to matchmaker server.');
+        setWsStatus('disconnected');
+      };
+
+      socket.onclose = () => {
+        setWsStatus('disconnected');
+      };
+
+    } catch (err) {
+      console.error('Error starting WebSocket connection:', err);
+      setWsError(settings.language === 'es'
+        ? 'Error al inicializar conexión.'
+        : 'Failed to initialize connection.');
+      setWsStatus('disconnected');
     }
   };
 
@@ -1091,6 +1460,11 @@ export default function App() {
             selectedDifficulty={selectedDifficulty}
             setSelectedDifficulty={setSelectedDifficulty}
             language={settings.language}
+            onWebSocketAction={handleWebSocketAction}
+            wsStatus={wsStatus}
+            wsError={wsError}
+            wsActiveGameId={wsActiveGameId}
+            userNickname={userProfile.name}
           />
         )}
 
@@ -1162,40 +1536,51 @@ export default function App() {
                 engineAnalysis={engineAnalysis}
                 chatMessages={chatMessages}
                 onSendMessage={(text) => {
+                  const timestamp = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
                   setChatMessages((prev) => [
                     ...prev,
-                    { id: Math.random().toString(), sender: userProfile.name, text, timestamp: 'Now' },
+                    { id: Math.random().toString(), sender: userProfile.name, text, timestamp },
                   ]);
-                  // Coach AI responds with smart comment matching text
-                  setTimeout(() => {
-                    const ltext = text.toLowerCase();
-                    const isEs = settings.language === 'es';
-                    let response = isEs 
-                      ? "Estoy monitoreando las estructuras del tablero. ¡Sigue desarrollando tus piezas hacia el centro!" 
-                      : "I'm monitoring the board structures. Keep developing your pieces towards the center!";
-                    
-                    if (ltext.includes('best') || ltext.includes('mejor') || ltext.includes('suggestion') || ltext.includes('sugerencia') || ltext.includes('move') || ltext.includes('jugada')) {
-                      const targetSq = engineAnalysis.bestContinuation[0] || (isEs ? 'casillas centrales' : 'center squares');
-                      response = isEs 
-                        ? `Mi análisis recomienda mirar la casilla objetivo ${targetSq} para optimizar la estructura de peones.` 
-                        : `My analysis recommends looking at target ${targetSq} to optimize pawn structures.`;
-                    } else if (ltext.includes('opening') || ltext.includes('apertura')) {
-                      response = isEs 
-                        ? `Estamos jugando la apertura ${openingName}. Estudia sus trampas clásicas para mantenerte adelante.` 
-                        : `We are playing the ${openingName}. Study its classical traps to stay ahead.`;
-                    } else if (ltext.includes('capture') || ltext.includes('captura') || ltext.includes('advantage') || ltext.includes('ventaja')) {
-                      if (advantage > 0) {
+
+                  if (wsStatus === 'connected' && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({
+                      type: 'chat-message',
+                      gameId: wsActiveGameId,
+                      text,
+                      nickname: userProfile.name,
+                    }));
+                  } else {
+                    // Coach AI responds with smart comment matching text
+                    setTimeout(() => {
+                      const ltext = text.toLowerCase();
+                      const isEs = settings.language === 'es';
+                      let response = isEs 
+                        ? "Estoy monitoreando las estructuras del tablero. ¡Sigue desarrollando tus piezas hacia el centro!" 
+                        : "I'm monitoring the board structures. Keep developing your pieces towards the center!";
+                      
+                      if (ltext.includes('best') || ltext.includes('mejor') || ltext.includes('suggestion') || ltext.includes('sugerencia') || ltext.includes('move') || ltext.includes('jugada')) {
+                        const targetSq = engineAnalysis.bestContinuation[0] || (isEs ? 'casillas centrales' : 'center squares');
                         response = isEs 
-                          ? "Tienes un dominio material sólido. Simulando intercambios para simplificar el final." 
-                          : "You have solid material dominance. Simulating trade-downs to simplify endgame.";
-                      } else {
+                          ? `Mi análisis recomienda mirar la casilla objetivo ${targetSq} para optimizar la estructura de peones.` 
+                          : `My analysis recommends looking at target ${targetSq} to optimize pawn structures.`;
+                      } else if (ltext.includes('opening') || ltext.includes('apertura')) {
                         response = isEs 
-                          ? "El material está bastante igualado. Prioriza la posición táctica sobre los intercambios." 
-                          : "Material is fairly equal. Prioritize tactical position over trades.";
+                          ? `Estamos jugando la apertura ${openingName}. Estudia sus trampas clásicas para mantenerte adelante.` 
+                          : `We are playing the ${openingName}. Study its classical traps to stay ahead.`;
+                      } else if (ltext.includes('capture') || ltext.includes('captura') || ltext.includes('advantage') || ltext.includes('ventaja')) {
+                        if (advantage > 0) {
+                          response = isEs 
+                            ? "Tienes un dominio material sólido. Simulando intercambios para simplificar el final." 
+                            : "You have solid material dominance. Simulating trade-downs to simplify endgame.";
+                        } else {
+                          response = isEs 
+                            ? "El material está bastante igualado. Prioriza la posición táctica sobre los intercambios." 
+                            : "Material is fairly equal. Prioritize tactical position over trades.";
+                        }
                       }
-                    }
-                    addCoachMessage(response);
-                  }, 1000);
+                      addCoachMessage(response);
+                    }, 1000);
+                  }
                 }}
                 isEngineThinking={isEngineThinking}
                 language={settings.language}

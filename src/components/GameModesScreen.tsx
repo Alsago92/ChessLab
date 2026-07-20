@@ -10,6 +10,12 @@ interface GameModesScreenProps {
   selectedDifficulty: number;
   setSelectedDifficulty: (level: number) => void;
   language: string;
+  // WebSocket props
+  onWebSocketAction: (action: { type: 'create' | 'join' | 'cancel', nickname: string, gameId?: string, preferredColor?: 'w' | 'b' | 'random' }) => void;
+  wsStatus: 'disconnected' | 'connecting' | 'waiting' | 'connected';
+  wsError: string | null;
+  wsActiveGameId: string | null;
+  userNickname: string;
 }
 
 const DIFFICULTIES = [
@@ -28,9 +34,21 @@ export const GameModesScreen: React.FC<GameModesScreenProps> = ({
   selectedDifficulty,
   setSelectedDifficulty,
   language,
+  onWebSocketAction,
+  wsStatus,
+  wsError,
+  wsActiveGameId,
+  userNickname,
 }) => {
   const [lobbySearch, setLobbySearch] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Real-time WebSocket match states
+  const [activeLobbyTab, setActiveLobbyTab] = useState<'simulated' | 'realtime'>('simulated');
+  const [wsNickname, setWsNickname] = useState(userNickname || 'Alexander Sn');
+  const [wsJoinCode, setWsJoinCode] = useState('');
+  const [preferredColor, setPreferredColor] = useState<'w' | 'b' | 'random'>('random');
+  const [isCopied, setIsCopied] = useState(false);
 
   const triggerRefresh = () => {
     setIsRefreshing(true);
@@ -214,106 +232,329 @@ export const GameModesScreen: React.FC<GameModesScreenProps> = ({
           </button>
         </div>
 
-        {/* Live Lobby (Col: 7) */}
+        {/* Live / WebSocket Online Column (Col: 7) */}
         <div className="lg:col-span-7 bg-neutral-900 border border-neutral-800/60 rounded-2xl p-6 shadow-md flex flex-col justify-between space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-blue-500 text-2xl">language</span>
-              <h3 className="text-lg font-bold text-neutral-100">{getTranslation(language, 'liveArenaLobby')}</h3>
-              <button
-                id="lobby-refresh-btn"
-                onClick={triggerRefresh}
-                disabled={isRefreshing}
-                className="w-7 h-7 bg-neutral-850 hover:bg-neutral-800 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-200 transition border border-neutral-800 cursor-pointer"
-                title={language === 'es' ? 'Refrescar lobby' : 'Refresh lobby'}
-              >
-                <span className={`material-symbols-outlined text-sm ${isRefreshing ? 'animate-spin' : ''}`}>sync</span>
-              </button>
-            </div>
-            {/* Search Input */}
-            <div className="relative">
-              <input
-                id="lobby-search-input"
-                type="text"
-                value={lobbySearch}
-                onChange={(e) => setLobbySearch(e.target.value)}
-                placeholder={getTranslation(language, 'searchPlayers')}
-                className="bg-neutral-950 border border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500 w-full sm:w-48 transition"
-              />
-              <span className="material-symbols-outlined absolute left-2.5 top-2 text-neutral-500 text-sm">search</span>
-            </div>
-          </div>
-
-          {/* Lobby Table container */}
-          <div className="overflow-x-auto overflow-y-auto max-h-[220px] min-h-[220px] border border-neutral-800/40 rounded-xl bg-neutral-950/20 flex flex-col">
-            {isRefreshing ? (
-              <div className="p-4 flex-grow flex flex-col justify-center">
-                <BoneyardSkeleton loading={true} variant="list" count={3} />
+          
+          {/* Tab Switcher Headers */}
+          <div className="flex border-b border-neutral-800 pb-2">
+            <button
+              id="lobby-tab-simulated"
+              onClick={() => setActiveLobbyTab('simulated')}
+              className={`flex-1 py-2 text-xs font-bold text-center border-b-2 transition-all cursor-pointer ${
+                activeLobbyTab === 'simulated'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">dns</span>
+                <span>{language === 'es' ? 'Arena Global' : 'Global Arena'}</span>
               </div>
-            ) : (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="text-neutral-500 border-b border-neutral-800/60 text-xs">
-                    <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'opponent')}</th>
-                    <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'rating')}</th>
-                    <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'timeControl')}</th>
-                    <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'ping')}</th>
-                    <th className="py-2.5 px-4 font-semibold text-right">{getTranslation(language, 'action')}</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs">
-                  {filteredLobby.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-neutral-500 italic">
-                        {getTranslation(language, 'noChallenges')}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredLobby.map((opponent) => (
-                      <tr key={opponent.id} className="border-b border-neutral-800/20 hover:bg-neutral-800/10">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <img 
-                              referrerPolicy="no-referrer"
-                              src={opponent.avatar} 
-                              alt={opponent.name}
-                              className="w-6 h-6 rounded-full bg-neutral-800 border border-neutral-700"
-                            />
-                            <span className="font-semibold text-neutral-200">{opponent.name}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-mono font-medium text-neutral-400">
-                          {opponent.rating}
-                        </td>
-                        <td className="py-3 px-4 text-neutral-300 font-medium">
-                          {opponent.timeControl}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-[10px] text-emerald-500 font-semibold">
-                          {opponent.ping}ms
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            id={`play-opponent-${opponent.id}`}
-                            onClick={() => onPlayLobbyOpponent(opponent)}
-                            className="bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg text-[10px] font-bold transition uppercase tracking-wider cursor-pointer"
-                          >
-                            {getTranslation(language, 'play')}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            )}
+            </button>
+            <button
+              id="lobby-tab-realtime"
+              onClick={() => setActiveLobbyTab('realtime')}
+              className={`flex-1 py-2 text-xs font-bold text-center border-b-2 transition-all cursor-pointer ${
+                activeLobbyTab === 'realtime'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">wifi</span>
+                <span>{language === 'es' ? 'Jugar con Amigo (Código)' : 'Play with Friend (Code)'}</span>
+              </div>
+            </button>
           </div>
 
-          <div className="flex justify-between items-center text-[10px] font-bold text-neutral-500 border-t border-neutral-800/40 pt-3">
-            <span>{onlineLobby.length} {getTranslation(language, 'challengesOnline')}</span>
-            <span className={`${isRefreshing ? 'text-blue-400 animate-pulse' : 'text-neutral-500'}`}>
-              {isRefreshing ? getTranslation(language, 'refreshing') : (language === 'es' ? 'Sincronizado' : 'Synced')}
-            </span>
-          </div>
+          {activeLobbyTab === 'simulated' ? (
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-blue-500 text-2xl">language</span>
+                  <h3 className="text-lg font-bold text-neutral-100">{getTranslation(language, 'liveArenaLobby')}</h3>
+                  <button
+                    id="lobby-refresh-btn"
+                    onClick={triggerRefresh}
+                    disabled={isRefreshing}
+                    className="w-7 h-7 bg-neutral-850 hover:bg-neutral-800 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-200 transition border border-neutral-800 cursor-pointer"
+                    title={language === 'es' ? 'Refrescar lobby' : 'Refresh lobby'}
+                  >
+                    <span className={`material-symbols-outlined text-sm ${isRefreshing ? 'animate-spin' : ''}`}>sync</span>
+                  </button>
+                </div>
+                {/* Search Input */}
+                <div className="relative">
+                  <input
+                    id="lobby-search-input"
+                    type="text"
+                    value={lobbySearch}
+                    onChange={(e) => setLobbySearch(e.target.value)}
+                    placeholder={getTranslation(language, 'searchPlayers')}
+                    className="bg-neutral-950 border border-neutral-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500 w-full sm:w-48 transition"
+                  />
+                  <span className="material-symbols-outlined absolute left-2.5 top-2 text-neutral-500 text-sm">search</span>
+                </div>
+              </div>
+
+              {/* Lobby Table container */}
+              <div className="overflow-x-auto overflow-y-auto max-h-[220px] min-h-[220px] border border-neutral-800/40 rounded-xl bg-neutral-950/20 flex flex-col">
+                {isRefreshing ? (
+                  <div className="p-4 flex-grow flex flex-col justify-center">
+                    <BoneyardSkeleton loading={true} variant="list" count={3} />
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="text-neutral-500 border-b border-neutral-800/60 text-xs">
+                        <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'opponent')}</th>
+                        <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'rating')}</th>
+                        <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'timeControl')}</th>
+                        <th className="py-2.5 px-4 font-semibold">{getTranslation(language, 'ping')}</th>
+                        <th className="py-2.5 px-4 font-semibold text-right">{getTranslation(language, 'action')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs">
+                      {filteredLobby.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-neutral-500 italic">
+                            {getTranslation(language, 'noChallenges')}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredLobby.map((opponent) => (
+                          <tr key={opponent.id} className="border-b border-neutral-800/20 hover:bg-neutral-800/10">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <img 
+                                  referrerPolicy="no-referrer"
+                                  src={opponent.avatar} 
+                                  alt={opponent.name}
+                                  className="w-6 h-6 rounded-full bg-neutral-800 border border-neutral-700"
+                                />
+                                <span className="font-semibold text-neutral-200">{opponent.name}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-medium text-neutral-400">
+                              {opponent.rating}
+                            </td>
+                            <td className="py-3 px-4 text-neutral-300 font-medium">
+                              {opponent.timeControl}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-[10px] text-emerald-500 font-semibold">
+                              {opponent.ping}ms
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                id={`play-opponent-${opponent.id}`}
+                                onClick={() => onPlayLobbyOpponent(opponent)}
+                                className="bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg text-[10px] font-bold transition uppercase tracking-wider cursor-pointer"
+                              >
+                                {getTranslation(language, 'play')}
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center text-[10px] font-bold text-neutral-500 border-t border-neutral-800/40 pt-3">
+                <span>{onlineLobby.length} {getTranslation(language, 'challengesOnline')}</span>
+                <span className={`${isRefreshing ? 'text-blue-400 animate-pulse' : 'text-neutral-500'}`}>
+                  {isRefreshing ? getTranslation(language, 'refreshing') : (language === 'es' ? 'Sincronizado' : 'Synced')}
+                </span>
+              </div>
+            </>
+          ) : (
+            /* WebSocket Real-Time Matchmaker panel */
+            <div className="flex-grow flex flex-col justify-between space-y-4">
+              
+              {/* Nickname and Core preferences */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                    {language === 'es' ? 'Tu Apodo / Nickname' : 'Your Nickname'}
+                  </label>
+                  <input
+                    id="ws-nickname-input"
+                    type="text"
+                    value={wsNickname}
+                    onChange={(e) => setWsNickname(e.target.value)}
+                    placeholder={language === 'es' ? 'Escribe tu apodo...' : 'Enter nickname...'}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-200 focus:outline-none focus:border-blue-500 transition"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                    {language === 'es' ? 'Color Preferido' : 'Preferred Color'}
+                  </label>
+                  <div className="flex gap-1 bg-neutral-950 p-1 border border-neutral-800 rounded-xl">
+                    {(['random', 'w', 'b'] as const).map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setPreferredColor(color)}
+                        className={`flex-1 py-1 text-[10px] font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                          preferredColor === color
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-neutral-400 hover:text-neutral-200'
+                        }`}
+                      >
+                        {color === 'random' 
+                          ? (language === 'es' ? 'Azar' : 'Random') 
+                          : color === 'w' 
+                          ? (language === 'es' ? 'Blancas' : 'White') 
+                          : (language === 'es' ? 'Negras' : 'Black')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Status / Actions Block */}
+              <div className="flex-grow flex flex-col justify-center items-center min-h-[160px] p-4 bg-neutral-950/40 border border-neutral-800/60 rounded-xl">
+                
+                {wsStatus === 'disconnected' && (
+                  <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                    {/* Create Side */}
+                    <div className="flex flex-col justify-between p-4 bg-neutral-900/40 border border-neutral-800/40 rounded-xl space-y-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-neutral-200">
+                          {language === 'es' ? '1. Crear una partida' : '1. Create a match'}
+                        </h4>
+                        <p className="text-[10px] text-neutral-500 mt-1">
+                          {language === 'es' 
+                            ? 'Genera un código único para compartir con un amigo y jugar de inmediato.' 
+                            : 'Generate a unique code to share with a friend and play immediately.'}
+                        </p>
+                      </div>
+                      <button
+                        id="ws-create-game-btn"
+                        onClick={() => onWebSocketAction({ type: 'create', nickname: wsNickname, preferredColor })}
+                        disabled={!wsNickname.trim()}
+                        className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-bold rounded-xl text-xs transition active:scale-95 cursor-pointer"
+                      >
+                        {language === 'es' ? 'Crear Partida' : 'Create Game'}
+                      </button>
+                    </div>
+
+                    {/* Join Side */}
+                    <div className="flex flex-col justify-between p-4 bg-neutral-900/40 border border-neutral-800/40 rounded-xl space-y-4">
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-neutral-200">
+                          {language === 'es' ? '2. Unirse con Código' : '2. Join with Code'}
+                        </h4>
+                        <input
+                          id="ws-code-input"
+                          type="text"
+                          maxLength={5}
+                          value={wsJoinCode}
+                          onChange={(e) => setWsJoinCode(e.target.value.toUpperCase().trim())}
+                          placeholder="ABCDE"
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-1.5 text-center font-mono font-bold tracking-widest text-sm text-neutral-100 focus:outline-none focus:border-blue-500 transition mt-1"
+                        />
+                      </div>
+                      <button
+                        id="ws-join-game-btn"
+                        onClick={() => onWebSocketAction({ type: 'join', nickname: wsNickname, gameId: wsJoinCode })}
+                        disabled={!wsNickname.trim() || wsJoinCode.length !== 5}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-bold rounded-xl text-xs transition active:scale-95 cursor-pointer"
+                      >
+                        {language === 'es' ? 'Unirse a Partida' : 'Join Game'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {wsStatus === 'connecting' && (
+                  <div className="text-center space-y-3 py-6">
+                    <span className="material-symbols-outlined text-blue-500 text-3xl animate-spin">sync</span>
+                    <p className="text-xs text-neutral-400 font-medium">
+                      {language === 'es' ? 'Estableciendo conexión en tiempo real...' : 'Connecting to matchmaking server...'}
+                    </p>
+                  </div>
+                )}
+
+                {wsStatus === 'waiting' && (
+                  <div className="text-center space-y-4 py-4 w-full max-w-sm">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
+                        {language === 'es' ? 'CÓDIGO DE EMPAREJAMIENTO' : 'PAIRING CODE'}
+                      </span>
+                      <div className="flex items-center justify-center gap-2">
+                        <span id="ws-pairing-code-display" className="font-mono text-3xl font-black text-blue-400 tracking-wider">
+                          {wsActiveGameId}
+                        </span>
+                        <button
+                          id="ws-copy-code-btn"
+                          onClick={() => {
+                            if (wsActiveGameId) {
+                              navigator.clipboard.writeText(wsActiveGameId);
+                              setIsCopied(true);
+                              setTimeout(() => setIsCopied(false), 2000);
+                            }
+                          }}
+                          className="w-8 h-8 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white transition cursor-pointer"
+                          title={language === 'es' ? 'Copiar código' : 'Copy code'}
+                        >
+                          <span className="material-symbols-outlined text-sm">
+                            {isCopied ? 'check' : 'content_copy'}
+                          </span>
+                        </button>
+                      </div>
+                      {isCopied && (
+                        <p className="text-[10px] text-emerald-500 font-bold animate-pulse mt-1">
+                          {language === 'es' ? '¡Código copiado al portapapeles!' : 'Code copied to clipboard!'}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-center gap-2 text-xs font-semibold text-neutral-400 bg-neutral-900/50 py-2 px-3 rounded-lg animate-pulse border border-neutral-850">
+                      <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                      <span>{language === 'es' ? 'Esperando a tu amigo...' : 'Waiting for friend to join...'}</span>
+                    </div>
+
+                    <button
+                      id="ws-cancel-game-btn"
+                      onClick={() => onWebSocketAction({ type: 'cancel', nickname: wsNickname })}
+                      className="px-4 py-1.5 bg-neutral-900 hover:bg-neutral-850 text-neutral-400 hover:text-red-400 border border-neutral-800 hover:border-red-500/20 rounded-xl text-[10px] font-bold transition cursor-pointer"
+                    >
+                      {language === 'es' ? 'Cancelar y salir' : 'Cancel & exit'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Error Alert Display */}
+              {wsError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-red-500 text-sm mt-0.5">error</span>
+                  <p className="text-xs text-red-400 leading-relaxed font-semibold">
+                    {wsError}
+                  </p>
+                </div>
+              )}
+
+              {/* Connection stats footer */}
+              <div className="flex justify-between items-center text-[10px] font-bold text-neutral-500 border-t border-neutral-800/40 pt-3">
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === 'disconnected' ? 'bg-neutral-600' : 'bg-emerald-500 animate-ping'}`}></span>
+                  <span>
+                    {language === 'es' 
+                      ? `Estado: ${wsStatus === 'disconnected' ? 'Desconectado' : 'Canal Abierto'}` 
+                      : `Status: ${wsStatus === 'disconnected' ? 'Disconnected' : 'Channel Open'}`}
+                  </span>
+                </div>
+                <span>Express WS Engine v1.0</span>
+              </div>
+
+            </div>
+          )}
+
         </div>
 
       </div>
