@@ -429,12 +429,12 @@ export default function App() {
       } else if (chess.isStalemate()) {
         status = 'stalemate';
         reason = settings.language === 'es' 
-          ? 'Tablas por ahogado (no quedan movimientos legales)' 
-          : 'Draw by stalemate (no legal moves left)';
+          ? 'Tablas por ahogado (el rey no está en jaque pero no tiene jugadas legales)' 
+          : 'Draw by stalemate (the king is not in check but has no legal moves)';
         gameWinner = 'draw';
         addCoachMessage(settings.language === 'es' 
-          ? 'Partida de tablas por ahogado. ¡Bloqueos seguros!' 
-          : 'Game drawn by stalemate. Safe blockages!');
+          ? '¡Tablas por ahogado! Recuerda: si tu oponente no tiene movimientos legales y su rey NO está en jaque, las reglas oficiales de la FIDE determinan tablas (empate) por ahogado, no una victoria. ¡Para ganar debes dar jaque mate!' 
+          : 'Draw by stalemate! Remember: if your opponent has no legal moves left and their king is NOT in check, official FIDE chess rules determine it as a draw (stalemate), not a win. To win, you must deliver checkmate!');
         recordGameResult('draw');
       } else if (chess.isDraw()) {
         status = 'draw';
