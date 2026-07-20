@@ -28,6 +28,7 @@ import { BottomToolbar } from './components/BottomToolbar';
 import { GameModesScreen } from './components/GameModesScreen';
 import { PlayerProfileScreen } from './components/PlayerProfileScreen';
 import { SettingsScreen } from './components/SettingsScreen';
+import { PieceGuideModal } from './components/PieceGuideModal';
 
 // Custom lightweight sound synthesiser using Web Audio API
 const playChessSound = (type: 'move' | 'capture' | 'check' | 'gameover', allowed: boolean) => {
@@ -150,6 +151,9 @@ export default function App() {
 
   // Engine Status
   const [isEngineThinking, setIsEngineThinking] = useState<boolean>(false);
+
+  // Guide Modal
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
   // Settings
   const [settings, setSettings] = useState<ChessSettings>(() => {
@@ -1139,6 +1143,7 @@ export default function App() {
                 onResign={handleResign}
                 onFlipBoard={handleFlipBoard}
                 onSettings={() => changeScreen('settings')}
+                onShowGuide={() => setShowGuideModal(true)}
                 canUndo={historyStack.length > 0}
                 canRedo={redoStack.length > 0}
                 gameActive={gameStatus === 'active'}
@@ -1221,6 +1226,14 @@ export default function App() {
         )}
 
       </main>
+
+      {/* Piece Guide Educational Modal Overlay */}
+      <PieceGuideModal 
+        isOpen={showGuideModal} 
+        onClose={() => setShowGuideModal(false)} 
+        language={settings.language} 
+        isDarkMode={settings.isDarkMode} 
+      />
     </div>
   );
 }

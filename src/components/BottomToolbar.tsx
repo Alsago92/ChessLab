@@ -9,6 +9,7 @@ interface BottomToolbarProps {
   onResign: () => void;
   onFlipBoard: () => void;
   onSettings: () => void;
+  onShowGuide: () => void;
   canUndo: boolean;
   canRedo: boolean;
   gameActive: boolean;
@@ -23,6 +24,7 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   onResign,
   onFlipBoard,
   onSettings,
+  onShowGuide,
   canUndo,
   canRedo,
   gameActive,
@@ -95,6 +97,16 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
             </button>
           </>
         )}
+
+        <button
+          id="toolbar-btn-guide"
+          onClick={onShowGuide}
+          className="px-4 py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 active:bg-emerald-600/35 border border-emerald-500/20 text-emerald-400 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition duration-150 cursor-pointer"
+          title={language === 'es' ? 'Guía de Piezas' : 'Piece Guide'}
+        >
+          <span className="material-symbols-outlined text-sm">school</span>
+          <span>{language === 'es' ? 'Guía de Piezas' : 'Piece Guide'}</span>
+        </button>
 
         <button
           id="toolbar-btn-settings"
