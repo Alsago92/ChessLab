@@ -144,6 +144,11 @@ export default function App() {
   const [inGameDrawOffered, setInGameDrawOffered] = useState<boolean>(false);
   const [inGameRematchOffered, setInGameRematchOffered] = useState<boolean>(false);
 
+  // Matchmaking State Variables
+  const [isMatchmaking, setIsMatchmaking] = useState<boolean>(false);
+  const [matchmakingTime, setMatchmakingTime] = useState<number>(0);
+  const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
+
   const [gameStatus, setGameStatus] = useState<'active' | 'checkmate' | 'stalemate' | 'draw' | 'resigned' | 'timeout'>('active');
   const [winner, setWinner] = useState<'white' | 'black' | 'draw' | null>(null);
   const [endReason, setEndReason] = useState<string>('');
@@ -256,6 +261,41 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     { id: 'welcome', sender: 'Coach AI', text: 'Welcome to the Chess Academy! I am your AI grandmaster coach. Move any piece and I will evaluate your tactics in real-time.', timestamp: '19:20' },
   ]);
+
+  // Matchmaking Timer and Timeout Hook (2 minutes limit)
+  useEffect(() => {
+    let interval: any = null;
+    if (isMatchmaking) {
+      interval = setInterval(() => {
+        setMatchmakingTime((prev) => {
+          if (prev >= 119) { // 120 seconds reached
+            setMatchmakingError(settings.language === 'es' 
+              ? 'No se encontraron jugadores disponibles en este momento. Por favor, intenta de nuevo.' 
+              : 'No available players found at this time. Please try again.');
+            setIsMatchmaking(false);
+            if (interval) clearInterval(interval);
+            
+            // Cancel connection
+            if (wsRef.current) {
+              wsRef.current.close();
+              wsRef.current = null;
+            }
+            setWsStatus('disconnected');
+            setWsActiveGameId(null);
+            setOnlinePlayerColor(null);
+            return 120;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      setMatchmakingTime(0);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isMatchmaking, settings.language]);
 
   // Game Loop interval for timers
   useEffect(() => {
@@ -918,7 +958,7 @@ export default function App() {
 
   // Real-time WebSocket match handler
   const handleWebSocketAction = (action: {
-    type: 'create' | 'join' | 'cancel';
+    type: 'create' | 'join' | 'cancel' | 'matchmaking';
     nickname: string;
     gameId?: string;
     preferredColor?: 'w' | 'b' | 'random';
@@ -933,6 +973,7 @@ export default function App() {
       setWsError(null);
       setWsActiveGameId(null);
       setOnlinePlayerColor(null);
+      setIsMatchmaking(false);
       return;
     }
 
@@ -963,6 +1004,11 @@ export default function App() {
             gameId: action.gameId,
             nickname: action.nickname,
           }));
+        } else if (action.type === 'matchmaking') {
+          socket.send(JSON.stringify({
+            type: 'join-matchmaking',
+            nickname: action.nickname,
+          }));
         }
       };
 
@@ -971,6 +1017,10 @@ export default function App() {
           const data = JSON.parse(event.data);
 
           switch (data.type) {
+            case 'matchmaking-queued':
+              setWsStatus('waiting');
+              break;
+
             case 'game-created':
               setWsStatus('waiting');
               setWsActiveGameId(data.gameId);
@@ -979,6 +1029,7 @@ export default function App() {
               break;
 
             case 'game-joined': {
+              setIsMatchmaking(false);
               setWsStatus('connected');
               setWsActiveGameId(data.gameId);
               setOnlinePlayerColor(data.playerColor);
@@ -1027,6 +1078,7 @@ export default function App() {
             }
 
             case 'opponent-joined': {
+              setIsMatchmaking(false);
               setWsStatus('connected');
               
               // Set up initial board
@@ -1219,10 +1271,12 @@ export default function App() {
           ? 'Error al conectar con el servidor.'
           : 'Failed to connect to matchmaker server.');
         setWsStatus('disconnected');
+        setIsMatchmaking(false);
       };
 
       socket.onclose = () => {
         setWsStatus('disconnected');
+        setIsMatchmaking(false);
       };
 
     } catch (err) {
@@ -1239,8 +1293,32 @@ export default function App() {
     setIsFlipped(!isFlipped);
   };
 
+  const startMatchmaking = () => {
+    setIsMatchmaking(true);
+    setMatchmakingTime(0);
+    setMatchmakingError(null);
+    handleWebSocketAction({
+      type: 'matchmaking',
+      nickname: userProfile.name,
+    });
+  };
+
+  const cancelMatchmaking = () => {
+    setIsMatchmaking(false);
+    setMatchmakingTime(0);
+    handleWebSocketAction({
+      type: 'cancel',
+      nickname: userProfile.name,
+    });
+  };
+
   // Launch fresh chess match
   const startNewGame = (mode: GameMode = 'local', difficultyLevel?: number) => {
+    if (mode === 'online') {
+      startMatchmaking();
+      return;
+    }
+
     const chess = new Chess();
     chessRef.current = chess;
     
@@ -1622,6 +1700,117 @@ export default function App() {
         language={settings.language} 
         isDarkMode={settings.isDarkMode} 
       />
+
+      {/* MATCHMAKING OVERLAY MODAL */}
+      {isMatchmaking && (
+        <div id="matchmaking-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/85 backdrop-blur-sm">
+          <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl max-w-md w-full mx-4 shadow-2xl flex flex-col items-center text-center space-y-6">
+            
+            {/* Sonar Radar Wave Animation */}
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <div className="absolute inset-0 bg-blue-500/10 rounded-full animate-ping"></div>
+              <div className="absolute inset-2 bg-blue-500/20 rounded-full animate-pulse"></div>
+              <div className="w-16 h-16 bg-blue-600/20 border border-blue-500/40 rounded-full flex items-center justify-center shadow-lg">
+                <span className="material-symbols-outlined text-blue-400 text-3xl animate-spin">sync</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-neutral-100 tracking-tight">
+                {settings.language === 'es' ? 'Buscando Oponente...' : 'Searching for Opponent...'}
+              </h3>
+              <p className="text-xs text-neutral-400 max-w-xs leading-relaxed">
+                {settings.language === 'es' 
+                  ? 'Buscando a un contrincante de tu nivel en la Arena en Línea.' 
+                  : 'Matching you with a player of similar skill in the Online Arena.'}
+              </p>
+            </div>
+
+            {/* Timer and Progress bar */}
+            <div className="w-full space-y-2.5">
+              <div className="flex justify-between items-center text-xs font-semibold px-1">
+                <span className="text-neutral-500">
+                  {settings.language === 'es' ? 'Tiempo de espera:' : 'Matchmaking time:'}
+                </span>
+                <span className="font-mono text-blue-400 font-bold">
+                  {Math.floor(matchmakingTime / 60)}:{(matchmakingTime % 60).toString().padStart(2, '0')} / 2:00
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">
+                <div 
+                  className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-linear shadow-md"
+                  style={{ width: `${(matchmakingTime / 120) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Dynamic system info ticks */}
+            <div className="w-full py-2.5 px-3.5 bg-neutral-950/40 border border-neutral-800 rounded-xl flex items-center justify-between text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                <span>
+                  {settings.language === 'es' ? 'Buscando...' : 'Searching...'}
+                </span>
+              </div>
+              <span>
+                {wsStatus === 'connecting' 
+                  ? (settings.language === 'es' ? 'Conectando' : 'Connecting')
+                  : (settings.language === 'es' ? 'En Cola' : 'Queued')}
+              </span>
+            </div>
+
+            {/* Cancel Matchmaking Button */}
+            <button
+              id="cancel-matchmaking-btn"
+              onClick={cancelMatchmaking}
+              className="w-full py-3 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 hover:text-white border border-neutral-700 rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer"
+            >
+              {settings.language === 'es' ? 'Cancelar Búsqueda' : 'Cancel Search'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MATCHMAKING TIMEOUT MODAL */}
+      {matchmakingError && (
+        <div id="matchmaking-error-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/85 backdrop-blur-sm">
+          <div className="bg-neutral-900 border border-neutral-800 p-8 rounded-2xl max-w-md w-full mx-4 shadow-2xl flex flex-col items-center text-center space-y-6">
+            
+            <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-full flex items-center justify-center text-red-400">
+              <span className="material-symbols-outlined text-3xl">hourglass_empty</span>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-neutral-100 tracking-tight">
+                {settings.language === 'es' ? 'Tiempo de Espera Agotado' : 'Matchmaking Timeout'}
+              </h3>
+              <p className="text-xs text-neutral-400 max-w-xs leading-relaxed">
+                {matchmakingError}
+              </p>
+            </div>
+
+            <div className="flex w-full gap-3">
+              <button
+                id="close-matchmaking-error-btn"
+                onClick={() => setMatchmakingError(null)}
+                className="flex-1 py-3 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 font-bold rounded-xl text-xs transition active:scale-95 cursor-pointer"
+              >
+                {settings.language === 'es' ? 'Cerrar' : 'Close'}
+              </button>
+              <button
+                id="retry-matchmaking-btn"
+                onClick={() => {
+                  setMatchmakingError(null);
+                  startMatchmaking();
+                }}
+                className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-blue-500/10"
+              >
+                {settings.language === 'es' ? 'Intentar de Nuevo' : 'Try Again'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

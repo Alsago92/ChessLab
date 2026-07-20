@@ -17,7 +17,13 @@ interface GameSession {
   moves: string[];
 }
 
+interface MatchmakingPlayer {
+  nickname: string;
+  ws: WebSocket;
+}
+
 const games = new Map<string, GameSession>();
+let matchmakingQueue: MatchmakingPlayer[] = [];
 
 async function startServer() {
   const app = express();
@@ -52,14 +58,91 @@ async function startServer() {
   }
 
   wss.on('connection', (ws: WebSocket) => {
-    let playerGameId: string | null = null;
-    let playerColor: 'w' | 'b' | null = null;
+    const sessionState = {
+      playerGameId: null as string | null,
+      playerColor: null as 'w' | 'b' | null,
+    };
+    (ws as any).sessionState = sessionState;
 
     ws.on('message', (message: string) => {
       try {
         const data = JSON.parse(message);
         
         switch (data.type) {
+          case 'join-matchmaking': {
+            const { nickname } = data;
+            
+            // Remove from queue if already present
+            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws);
+
+            if (matchmakingQueue.length > 0) {
+              const opponent = matchmakingQueue.shift()!;
+              const gameId = generateGameId();
+
+              // Random colors
+              const isHostWhite = Math.random() < 0.5;
+              const hostColor: 'w' | 'b' = isHostWhite ? 'w' : 'b';
+              const guestColor: 'w' | 'b' = isHostWhite ? 'b' : 'w';
+
+              const hostSession: PlayerSession = { nickname: opponent.nickname, ws: opponent.ws };
+              const guestSession: PlayerSession = { nickname, ws };
+
+              const newGame: GameSession = {
+                gameId,
+                white: hostColor === 'w' ? hostSession : guestSession,
+                black: hostColor === 'b' ? hostSession : guestSession,
+                fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+                moves: [],
+              };
+
+              games.set(gameId, newGame);
+
+              const opponentState = (opponent.ws as any).sessionState;
+              if (opponentState) {
+                opponentState.playerGameId = gameId;
+                opponentState.playerColor = hostColor;
+              }
+              sessionState.playerGameId = gameId;
+              sessionState.playerColor = guestColor;
+
+              // Send game-joined to both
+              const payloadHost = JSON.stringify({
+                type: 'game-joined',
+                gameId,
+                playerColor: hostColor,
+                whiteNickname: newGame.white?.nickname || '',
+                blackNickname: newGame.black?.nickname || '',
+                fen: newGame.fen,
+              });
+
+              const payloadGuest = JSON.stringify({
+                type: 'game-joined',
+                gameId,
+                playerColor: guestColor,
+                whiteNickname: newGame.white?.nickname || '',
+                blackNickname: newGame.black?.nickname || '',
+                fen: newGame.fen,
+              });
+
+              opponent.ws.send(payloadHost);
+              ws.send(payloadGuest);
+            } else {
+              matchmakingQueue.push({ nickname, ws });
+              ws.send(JSON.stringify({
+                type: 'matchmaking-queued',
+              }));
+            }
+            break;
+          }
+
+          case 'leave-matchmaking': {
+            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws);
+            ws.send(JSON.stringify({
+              type: 'matchmaking-cancelled',
+            }));
+            break;
+          }
+
           case 'create-game': {
             const { nickname, preferredColor } = data;
             const gameId = generateGameId();
@@ -81,8 +164,8 @@ async function startServer() {
             };
 
             games.set(gameId, newGame);
-            playerGameId = gameId;
-            playerColor = assignedColor;
+            sessionState.playerGameId = gameId;
+            sessionState.playerColor = assignedColor;
 
             ws.send(JSON.stringify({
               type: 'game-created',
@@ -125,8 +208,8 @@ async function startServer() {
               game.black = session;
             }
 
-            playerGameId = targetGameId;
-            playerColor = assignedColor;
+            sessionState.playerGameId = targetGameId;
+            sessionState.playerColor = assignedColor;
 
             // Notify joiner
             ws.send(JSON.stringify({
@@ -152,8 +235,8 @@ async function startServer() {
           }
 
           case 'make-move': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
             const { move, fen } = data;
@@ -163,7 +246,7 @@ async function startServer() {
             }
 
             // Broadcast move to opponent
-            const opponent = playerColor === 'w' ? game.black : game.white;
+            const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
             if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
               opponent.ws.send(JSON.stringify({
                 type: 'opponent-moved',
@@ -175,11 +258,11 @@ async function startServer() {
           }
 
           case 'resign': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
-            const opponent = playerColor === 'w' ? game.black : game.white;
+            const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
             if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
               opponent.ws.send(JSON.stringify({
                 type: 'opponent-resigned',
@@ -189,11 +272,11 @@ async function startServer() {
           }
 
           case 'offer-draw': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
-            const opponent = playerColor === 'w' ? game.black : game.white;
+            const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
             if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
               opponent.ws.send(JSON.stringify({
                 type: 'draw-offered',
@@ -203,12 +286,12 @@ async function startServer() {
           }
 
           case 'respond-draw': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
             const { accepted } = data;
-            const opponent = playerColor === 'w' ? game.black : game.white;
+            const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
             if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
               opponent.ws.send(JSON.stringify({
                 type: 'draw-responded',
@@ -219,11 +302,11 @@ async function startServer() {
           }
 
           case 'offer-rematch': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
-            const opponent = playerColor === 'w' ? game.black : game.white;
+            const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
             if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
               opponent.ws.send(JSON.stringify({
                 type: 'rematch-offered',
@@ -233,8 +316,8 @@ async function startServer() {
           }
 
           case 'respond-rematch': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
             const { accepted } = data;
@@ -243,7 +326,7 @@ async function startServer() {
               game.moves = [];
             }
 
-            const opponent = playerColor === 'w' ? game.black : game.white;
+            const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
             if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
               opponent.ws.send(JSON.stringify({
                 type: 'rematch-responded',
@@ -254,8 +337,8 @@ async function startServer() {
           }
 
           case 'chat-message': {
-            if (!playerGameId) return;
-            const game = games.get(playerGameId);
+            if (!sessionState.playerGameId) return;
+            const game = games.get(sessionState.playerGameId);
             if (!game) return;
 
             const { text, nickname } = data;
@@ -280,18 +363,21 @@ async function startServer() {
     });
 
     ws.on('close', () => {
-      if (playerGameId) {
-        const game = games.get(playerGameId);
+      // Remove from matchmaking queue if present
+      matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws);
+
+      if (sessionState.playerGameId) {
+        const game = games.get(sessionState.playerGameId);
         if (game) {
           // Remove disconnecting player from session
-          if (playerColor === 'w') {
+          if (sessionState.playerColor === 'w') {
             game.white = null;
-          } else if (playerColor === 'b') {
+          } else if (sessionState.playerColor === 'b') {
             game.black = null;
           }
 
           // Notify the other player
-          const opponent = playerColor === 'w' ? game.black : game.white;
+          const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
           if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
             opponent.ws.send(JSON.stringify({
               type: 'opponent-disconnected',
@@ -301,7 +387,7 @@ async function startServer() {
 
           // Clean up game if both players are gone
           if (!game.white && !game.black) {
-            games.delete(playerGameId);
+            games.delete(sessionState.playerGameId);
           }
         }
       }
