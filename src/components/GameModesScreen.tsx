@@ -45,7 +45,7 @@ export const GameModesScreen: React.FC<GameModesScreenProps> = ({
   
   // Real-time WebSocket match states
   const [activeLobbyTab, setActiveLobbyTab] = useState<'simulated' | 'realtime'>('simulated');
-  const [wsNickname, setWsNickname] = useState(userNickname || 'Alexander Sn');
+  const [wsNickname, setWsNickname] = useState(userNickname || 'Alsago');
   const [wsJoinCode, setWsJoinCode] = useState('');
   const [preferredColor, setPreferredColor] = useState<'w' | 'b' | 'random'>('random');
   const [isCopied, setIsCopied] = useState(false);

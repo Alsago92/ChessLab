@@ -187,7 +187,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<{ name: string; avatar: string }>(() => {
     const saved = getCookie<{ name: string; avatar: string }>('chess_user_profile');
     return saved || {
-      name: 'Alexander Sn',
+      name: 'Alsago',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
     };
   });
@@ -223,7 +223,7 @@ export default function App() {
     const savedStats = getCookie<PlayerStats>('chess_player_stats');
     const savedProfile = getCookie<{ name: string; avatar: string }>('chess_user_profile');
     return {
-      name: savedProfile?.name || 'Alexander Sn',
+      name: savedProfile?.name || 'Alsago',
       rating: savedStats?.currentRating || 1550,
       avatar: savedProfile?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=120',
     };
@@ -846,25 +846,26 @@ export default function App() {
     }
 
     setGameStatus('resigned');
-    // In multiplayer, the winner is whoever color is NOT the local player color, or default
-    const resignWinner = wsStatus === 'connected'
-      ? (onlinePlayerColor === 'w' ? 'black' : 'white')
-      : (turn === 'w' ? 'black' : 'white');
+    // Who is the resigning player?
+    const resigningColor = wsStatus === 'connected' ? onlinePlayerColor : turn;
+    const resignWinner = resigningColor === 'w' ? 'black' : 'white';
     setWinner(resignWinner);
     
-    const playerColor = turn === 'w' 
+    const playerColor = resigningColor === 'w' 
       ? (settings.language === 'es' ? 'Las Blancas' : 'White') 
       : (settings.language === 'es' ? 'Las Negras' : 'Black');
     
+    const plainEnglishColor = resigningColor === 'w' ? 'White' : 'Black';
+
     setEndReason(settings.language === 'es' 
       ? `${playerColor} se han rendido.` 
-      : `${turn === 'w' ? 'White' : 'Black'} resigned from the match.`);
+      : `${plainEnglishColor} resigned from the match.`);
     playChessSound('gameover', settings.soundEffects);
     
     addCoachMessage(settings.language === 'es' 
       ? `Partida finalizada. Se rinden ${playerColor.toLowerCase()}.` 
-      : `Match ended. ${turn === 'w' ? 'White' : 'Black'} resigned.`);
-    recordGameResult(resignWinner === 'white' ? 'win' : 'loss');
+      : `Match ended. ${plainEnglishColor} resigned.`);
+    recordGameResult('loss');
   };
 
   // Draw offer
@@ -1005,15 +1006,16 @@ export default function App() {
               setGameMode('online'); // Reuse online screen
 
               // Update players info
+              const localIsWhite = data.playerColor === 'w';
               setWhitePlayer({
-                name: data.whiteNickname || 'White Player',
-                rating: 1500,
-                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+                name: localIsWhite ? userProfile.name : (data.whiteNickname || 'White Player'),
+                rating: localIsWhite ? playerStats.currentRating : 1500,
+                avatar: localIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
               });
               setBlackPlayer({
-                name: data.blackNickname || 'Black Player',
-                rating: 1500,
-                avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
+                name: !localIsWhite ? userProfile.name : (data.blackNickname || 'Black Player'),
+                rating: !localIsWhite ? playerStats.currentRating : 1500,
+                avatar: !localIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
               });
 
               addCoachMessage(settings.language === 'es'
@@ -1049,15 +1051,16 @@ export default function App() {
               setGameMode('online');
 
               // Update players info
+              const hostIsWhite = onlinePlayerColor === 'w';
               setWhitePlayer({
-                name: data.whiteNickname || userProfile.name,
-                rating: playerStats.currentRating,
-                avatar: userProfile.avatar,
+                name: hostIsWhite ? userProfile.name : (data.whiteNickname || data.opponentNickname || 'Opponent'),
+                rating: hostIsWhite ? playerStats.currentRating : 1500,
+                avatar: hostIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
               });
               setBlackPlayer({
-                name: data.blackNickname || data.opponentNickname || 'Opponent',
-                rating: 1500,
-                avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
+                name: !hostIsWhite ? userProfile.name : (data.blackNickname || data.opponentNickname || 'Opponent'),
+                rating: !hostIsWhite ? playerStats.currentRating : 1500,
+                avatar: !hostIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
               });
 
               addCoachMessage(settings.language === 'es'
