@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import { getCookie, setCookie } from './utils/cookies';
 import {
@@ -143,6 +143,8 @@ export default function App() {
   const [wsOpponentNickname, setWsOpponentNickname] = useState<string>('');
   const [inGameDrawOffered, setInGameDrawOffered] = useState<boolean>(false);
   const [inGameRematchOffered, setInGameRematchOffered] = useState<boolean>(false);
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  const [isOpponentOffline, setIsOpponentOffline] = useState<boolean>(false);
 
   // Matchmaking State Variables
   const [isMatchmaking, setIsMatchmaking] = useState<boolean>(false);
@@ -956,6 +958,412 @@ export default function App() {
     }
   };
 
+  // Incoming WebSocket message processor
+  const handleWsIncomingMessage = useCallback((event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      switch (data.type) {
+        case 'ping':
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'pong' }));
+          }
+          break;
+
+        case 'pong':
+          break;
+
+        case 'matchmaking-queued':
+          setWsStatus('waiting');
+          break;
+
+        case 'game-created':
+          setWsStatus('waiting');
+          setWsActiveGameId(data.gameId);
+          setOnlinePlayerColor(data.playerColor);
+          setIsFlipped(data.playerColor === 'b');
+          break;
+
+        case 'game-joined': {
+          setIsMatchmaking(false);
+          setIsReconnecting(false);
+          setIsOpponentOffline(false);
+          setWsStatus('connected');
+          setWsActiveGameId(data.gameId);
+          setOnlinePlayerColor(data.playerColor);
+          setIsFlipped(data.playerColor === 'b');
+          
+          // Set up initial board
+          const chess = new Chess(data.fen);
+          chessRef.current = chess;
+          setBoard(chess.board());
+          setTurn(chess.turn());
+          setSelectedSquare(null);
+          setPossibleMoves([]);
+          setLastMove(null);
+          setCheckSquare(null);
+          setHistoryStack([]);
+          setRedoStack([]);
+          setActiveMoveIndex(-1);
+          setOpeningName('Standard Theory');
+          setWhiteTime(600);
+          setBlackTime(600);
+          setActiveTurn('w');
+          setGameStatus('active');
+          setWinner(null);
+          setEndReason('');
+          setGameMode('online');
+
+          // Update players info
+          const localIsWhite = data.playerColor === 'w';
+          setWhitePlayer({
+            name: localIsWhite ? userProfile.name : (data.whiteNickname || 'White Player'),
+            rating: localIsWhite ? playerStats.currentRating : 1500,
+            avatar: localIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+          });
+          setBlackPlayer({
+            name: !localIsWhite ? userProfile.name : (data.blackNickname || 'Black Player'),
+            rating: !localIsWhite ? playerStats.currentRating : 1500,
+            avatar: !localIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
+          });
+
+          addCoachMessage(settings.language === 'es'
+            ? `Te has unido a la partida ${data.gameId}. ¡Suerte!`
+            : `Joined match ${data.gameId}. Good luck!`);
+          
+          changeScreen('game');
+          break;
+        }
+
+        case 'game-rejoined': {
+          setIsMatchmaking(false);
+          setIsReconnecting(false);
+          setIsOpponentOffline(false);
+          setWsStatus('connected');
+          setWsActiveGameId(data.gameId);
+          if (data.playerColor) setOnlinePlayerColor(data.playerColor);
+
+          // Restore latest position
+          if (data.fen) {
+            const chess = new Chess(data.fen);
+            chessRef.current = chess;
+            setBoard(chess.board());
+            setTurn(chess.turn());
+            setActiveTurn(chess.turn());
+            setSelectedSquare(null);
+            setPossibleMoves([]);
+            updateEngineState();
+          }
+
+          addCoachMessage(settings.language === 'es'
+            ? '¡Conexión de la partida restablecida con éxito!'
+            : 'Match connection successfully restored!');
+          break;
+        }
+
+        case 'opponent-joined': {
+          setIsMatchmaking(false);
+          setIsReconnecting(false);
+          setIsOpponentOffline(false);
+          setWsStatus('connected');
+          
+          // Set up initial board
+          const chess = new Chess();
+          chessRef.current = chess;
+          setBoard(chess.board());
+          setTurn('w');
+          setSelectedSquare(null);
+          setPossibleMoves([]);
+          setLastMove(null);
+          setCheckSquare(null);
+          setHistoryStack([]);
+          setRedoStack([]);
+          setActiveMoveIndex(-1);
+          setOpeningName('Standard Theory');
+          setWhiteTime(600);
+          setBlackTime(600);
+          setActiveTurn('w');
+          setGameStatus('active');
+          setWinner(null);
+          setEndReason('');
+          setGameMode('online');
+
+          // Update players info
+          const hostIsWhite = onlinePlayerColor === 'w';
+          setWhitePlayer({
+            name: hostIsWhite ? userProfile.name : (data.whiteNickname || data.opponentNickname || 'Opponent'),
+            rating: hostIsWhite ? playerStats.currentRating : 1500,
+            avatar: hostIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
+          });
+          setBlackPlayer({
+            name: !hostIsWhite ? userProfile.name : (data.blackNickname || data.opponentNickname || 'Opponent'),
+            rating: !hostIsWhite ? playerStats.currentRating : 1500,
+            avatar: !hostIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
+          });
+
+          addCoachMessage(settings.language === 'es'
+            ? `¡El oponente ${data.opponentNickname} se ha unido! Comienza la partida.`
+            : `Opponent ${data.opponentNickname} joined! Match begins.`);
+
+          changeScreen('game');
+          break;
+        }
+
+        case 'opponent-moved': {
+          setIsOpponentOffline(false);
+          const chess = chessRef.current;
+          const result = chess.move(data.move);
+          if (result) {
+            // Play sounds
+            const isCapture = result.captured;
+            playChessSound(isCapture ? 'capture' : 'move', settings.soundEffects);
+
+            const historyItem: MoveHistoryItem = {
+              san: result.san,
+              from: result.from,
+              to: result.to,
+              piece: result.piece,
+              color: result.color,
+              fenAfter: chess.fen(),
+              moveNumber: Math.floor(historyStack.length / 2) + 1,
+            };
+
+            setHistoryStack((prev) => [...prev, historyItem]);
+            setLastMove({ from: result.from, to: result.to });
+            setRedoStack([]);
+            
+            // Swap clock turns
+            setActiveTurn(chess.turn());
+            updateEngineState();
+
+            // Check alerts
+            if (chess.inCheck()) {
+              playChessSound('check', settings.soundEffects);
+            }
+          } else if (data.fen) {
+            const syncChess = new Chess(data.fen);
+            chessRef.current = syncChess;
+            setBoard(syncChess.board());
+            setTurn(syncChess.turn());
+            setActiveTurn(syncChess.turn());
+          }
+          break;
+        }
+
+        case 'opponent-offline':
+          setIsOpponentOffline(true);
+          addCoachMessage(settings.language === 'es'
+            ? 'El oponente se desconectó temporalmente. Esperando reconexión...'
+            : 'Opponent temporarily disconnected. Waiting for reconnect...');
+          break;
+
+        case 'opponent-reconnected':
+          setIsOpponentOffline(false);
+          addCoachMessage(settings.language === 'es'
+            ? '¡El oponente se ha reconectado!'
+            : 'Opponent reconnected!');
+          break;
+
+        case 'opponent-disconnected':
+          setIsOpponentOffline(false);
+          addCoachMessage(settings.language === 'es'
+            ? 'El oponente se desconectó definitivamente.'
+            : 'Opponent disconnected.');
+          setGameStatus('resigned');
+          setWinner(onlinePlayerColor === 'w' ? 'white' : 'black');
+          setEndReason(settings.language === 'es'
+            ? 'Victoria por abandono (tiempo de reconexión agotado).'
+            : 'Victory by abandonment (reconnection timeout).');
+          playChessSound('gameover', settings.soundEffects);
+          recordGameResult('win');
+          break;
+
+        case 'opponent-resigned': {
+          setIsOpponentOffline(false);
+          setGameStatus('resigned');
+          const localIsWhite = onlinePlayerColor === 'w';
+          setWinner(localIsWhite ? 'white' : 'black');
+          setEndReason(settings.language === 'es'
+            ? 'El oponente se ha rendido. ¡Has ganado!'
+            : 'The opponent resigned. You win!');
+          playChessSound('gameover', settings.soundEffects);
+          recordGameResult('win');
+          break;
+        }
+
+        case 'draw-offered':
+          setInGameDrawOffered(true);
+          addCoachMessage(settings.language === 'es'
+            ? 'El oponente ofrece tablas (empate).'
+            : 'Opponent offered a draw.');
+          break;
+
+        case 'draw-responded':
+          if (data.accepted) {
+            setGameStatus('draw');
+            setWinner('draw');
+            setEndReason(settings.language === 'es'
+              ? 'Tablas por acuerdo mutuo.'
+              : 'Game drawn by mutual agreement.');
+            playChessSound('gameover', settings.soundEffects);
+            recordGameResult('draw');
+          } else {
+            setInGameDrawOffered(false);
+            addCoachMessage(settings.language === 'es'
+              ? 'Oferta de tablas rechazada.'
+              : 'Draw offer declined.');
+          }
+          break;
+
+        case 'rematch-offered':
+          setInGameRematchOffered(true);
+          addCoachMessage(settings.language === 'es'
+            ? 'El oponente propone revancha.'
+            : 'Opponent offered a rematch.');
+          break;
+
+        case 'rematch-responded':
+          if (data.accepted) {
+            // Reset board
+            const chess = new Chess();
+            chessRef.current = chess;
+            setBoard(chess.board());
+            setTurn('w');
+            setSelectedSquare(null);
+            setPossibleMoves([]);
+            setLastMove(null);
+            setCheckSquare(null);
+            setHistoryStack([]);
+            setRedoStack([]);
+            setActiveMoveIndex(-1);
+            setOpeningName('Standard Theory');
+            setWhiteTime(600);
+            setBlackTime(600);
+            setActiveTurn('w');
+            setGameStatus('active');
+            setWinner(null);
+            setEndReason('');
+            setInGameRematchOffered(false);
+            addCoachMessage(settings.language === 'es'
+              ? 'Revancha iniciada.'
+              : 'Rematch started.');
+          } else {
+            setInGameRematchOffered(false);
+            addCoachMessage(settings.language === 'es'
+              ? 'Propuesta de revancha rechazada.'
+              : 'Rematch offer declined.');
+          }
+          break;
+
+        case 'chat-message': {
+          const chatMsg: ChatMessage = {
+            id: `chat-${Date.now()}-${Math.random()}`,
+            sender: data.nickname || 'Guest',
+            text: data.text || '',
+            timestamp: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+          };
+          setChatMessages((prev) => [...prev, chatMsg]);
+          break;
+        }
+
+        case 'error':
+          setWsError(data.message || 'Error desconocido.');
+          setWsStatus('disconnected');
+          break;
+      }
+    } catch (err) {
+      console.error('Error parsing WS message:', err);
+    }
+  }, [onlinePlayerColor, historyStack.length, userProfile.name, userProfile.avatar, playerStats.currentRating, settings.language, settings.soundEffects]);
+
+  // Reconnect function for active online matches (especially on mobile foreground resume)
+  const reconnectOnlineGame = useCallback(() => {
+    if (!wsActiveGameId || gameMode !== 'online' || gameStatus !== 'active') return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+
+    console.log('[Mobile WS] Attempting online game auto-reconnect for ID:', wsActiveGameId);
+    setIsReconnecting(true);
+
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}`;
+      const socket = new WebSocket(wsUrl);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        socket.send(JSON.stringify({
+          type: 'rejoin-game',
+          gameId: wsActiveGameId,
+          nickname: userProfile.name,
+          playerColor: onlinePlayerColor,
+        }));
+      };
+
+      socket.onmessage = handleWsIncomingMessage;
+
+      socket.onerror = (err) => {
+        console.error('[Mobile WS Reconnect] Socket error:', err);
+      };
+
+      socket.onclose = () => {
+        setWsStatus('disconnected');
+      };
+    } catch (err) {
+      console.error('[Mobile WS Reconnect] Exception:', err);
+    }
+  }, [wsActiveGameId, gameMode, gameStatus, userProfile.name, onlinePlayerColor, handleWsIncomingMessage]);
+
+  // Mobile browser lifecycle reconnect listener (iOS Chrome / background tab return)
+  useEffect(() => {
+    const checkAndReconnect = () => {
+      if (wsActiveGameId && gameMode === 'online' && gameStatus === 'active') {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          reconnectOnlineGame();
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndReconnect();
+      }
+    };
+
+    const handleFocus = () => {
+      checkAndReconnect();
+    };
+
+    const handleOnline = () => {
+      checkAndReconnect();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnline);
+
+    // Periodic socket health checker & heartbeat ping (every 3.5 seconds)
+    const healthInterval = setInterval(() => {
+      if (wsActiveGameId && gameMode === 'online' && gameStatus === 'active') {
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING) {
+          reconnectOnlineGame();
+        } else if (wsRef.current.readyState === WebSocket.OPEN) {
+          try {
+            wsRef.current.send(JSON.stringify({ type: 'ping' }));
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }, 3500);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleOnline);
+      clearInterval(healthInterval);
+    };
+  }, [wsActiveGameId, gameMode, gameStatus, reconnectOnlineGame]);
+
   // Real-time WebSocket match handler
   const handleWebSocketAction = (action: {
     type: 'create' | 'join' | 'cancel' | 'matchmaking';
@@ -974,6 +1382,8 @@ export default function App() {
       setWsActiveGameId(null);
       setOnlinePlayerColor(null);
       setIsMatchmaking(false);
+      setIsReconnecting(false);
+      setIsOpponentOffline(false);
       return;
     }
 
@@ -1012,258 +1422,7 @@ export default function App() {
         }
       };
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          switch (data.type) {
-            case 'matchmaking-queued':
-              setWsStatus('waiting');
-              break;
-
-            case 'game-created':
-              setWsStatus('waiting');
-              setWsActiveGameId(data.gameId);
-              setOnlinePlayerColor(data.playerColor);
-              setIsFlipped(data.playerColor === 'b');
-              break;
-
-            case 'game-joined': {
-              setIsMatchmaking(false);
-              setWsStatus('connected');
-              setWsActiveGameId(data.gameId);
-              setOnlinePlayerColor(data.playerColor);
-              setIsFlipped(data.playerColor === 'b');
-              
-              // Set up initial board
-              const chess = new Chess(data.fen);
-              chessRef.current = chess;
-              setBoard(chess.board());
-              setTurn(chess.turn());
-              setSelectedSquare(null);
-              setPossibleMoves([]);
-              setLastMove(null);
-              setCheckSquare(null);
-              setHistoryStack([]);
-              setRedoStack([]);
-              setActiveMoveIndex(-1);
-              setOpeningName('Standard Theory');
-              setWhiteTime(600);
-              setBlackTime(600);
-              setActiveTurn('w');
-              setGameStatus('active');
-              setWinner(null);
-              setEndReason('');
-              setGameMode('online'); // Reuse online screen
-
-              // Update players info
-              const localIsWhite = data.playerColor === 'w';
-              setWhitePlayer({
-                name: localIsWhite ? userProfile.name : (data.whiteNickname || 'White Player'),
-                rating: localIsWhite ? playerStats.currentRating : 1500,
-                avatar: localIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
-              });
-              setBlackPlayer({
-                name: !localIsWhite ? userProfile.name : (data.blackNickname || 'Black Player'),
-                rating: !localIsWhite ? playerStats.currentRating : 1500,
-                avatar: !localIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
-              });
-
-              addCoachMessage(settings.language === 'es'
-                ? `Te has unido a la partida ${data.gameId}. ¡Suerte!`
-                : `Joined match ${data.gameId}. Good luck!`);
-              
-              changeScreen('game');
-              break;
-            }
-
-            case 'opponent-joined': {
-              setIsMatchmaking(false);
-              setWsStatus('connected');
-              
-              // Set up initial board
-              const chess = new Chess();
-              chessRef.current = chess;
-              setBoard(chess.board());
-              setTurn('w');
-              setSelectedSquare(null);
-              setPossibleMoves([]);
-              setLastMove(null);
-              setCheckSquare(null);
-              setHistoryStack([]);
-              setRedoStack([]);
-              setActiveMoveIndex(-1);
-              setOpeningName('Standard Theory');
-              setWhiteTime(600);
-              setBlackTime(600);
-              setActiveTurn('w');
-              setGameStatus('active');
-              setWinner(null);
-              setEndReason('');
-              setGameMode('online');
-
-              // Update players info
-              const hostIsWhite = onlinePlayerColor === 'w';
-              setWhitePlayer({
-                name: hostIsWhite ? userProfile.name : (data.whiteNickname || data.opponentNickname || 'Opponent'),
-                rating: hostIsWhite ? playerStats.currentRating : 1500,
-                avatar: hostIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=120',
-              });
-              setBlackPlayer({
-                name: !hostIsWhite ? userProfile.name : (data.blackNickname || data.opponentNickname || 'Opponent'),
-                rating: !hostIsWhite ? playerStats.currentRating : 1500,
-                avatar: !hostIsWhite ? userProfile.avatar : 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=120',
-              });
-
-              addCoachMessage(settings.language === 'es'
-                ? `¡El oponente ${data.opponentNickname} se ha unido! Comienza la partida.`
-                : `Opponent ${data.opponentNickname} joined! Match begins.`);
-
-              changeScreen('game');
-              break;
-            }
-
-            case 'opponent-moved': {
-              const chess = chessRef.current;
-              const result = chess.move(data.move);
-              if (result) {
-                // Play sounds
-                const isCapture = result.captured;
-                playChessSound(isCapture ? 'capture' : 'move', settings.soundEffects);
-
-                const historyItem: MoveHistoryItem = {
-                  san: result.san,
-                  from: result.from,
-                  to: result.to,
-                  piece: result.piece,
-                  color: result.color,
-                  fenAfter: chess.fen(),
-                  moveNumber: Math.floor(historyStack.length / 2) + 1,
-                };
-
-                setHistoryStack((prev) => [...prev, historyItem]);
-                setLastMove({ from: result.from, to: result.to });
-                setRedoStack([]);
-                
-                // Swap clock turns
-                setActiveTurn(chess.turn());
-                updateEngineState();
-
-                // Check alerts
-                if (chess.inCheck()) {
-                  playChessSound('check', settings.soundEffects);
-                }
-              }
-              break;
-            }
-
-            case 'opponent-resigned': {
-              setGameStatus('resigned');
-              const localIsWhite = onlinePlayerColor === 'w';
-              setWinner(localIsWhite ? 'white' : 'black');
-              setEndReason(settings.language === 'es'
-                ? 'El oponente se ha rendido. ¡Has ganado!'
-                : 'The opponent resigned. You win!');
-              playChessSound('gameover', settings.soundEffects);
-              recordGameResult('win');
-              break;
-            }
-
-            case 'draw-offered':
-              setInGameDrawOffered(true);
-              addCoachMessage(settings.language === 'es'
-                ? 'El oponente ofrece tablas (empate).'
-                : 'Opponent offered a draw.');
-              break;
-
-            case 'draw-responded':
-              if (data.accepted) {
-                setGameStatus('draw');
-                setWinner('draw');
-                setEndReason(settings.language === 'es'
-                  ? 'Tablas por acuerdo mutuo.'
-                  : 'Game drawn by mutual agreement.');
-                playChessSound('gameover', settings.soundEffects);
-                recordGameResult('draw');
-              } else {
-                setInGameDrawOffered(false);
-                addCoachMessage(settings.language === 'es'
-                  ? 'Oferta de tablas rechazada.'
-                  : 'Draw offer declined.');
-              }
-              break;
-
-            case 'rematch-offered':
-              setInGameRematchOffered(true);
-              addCoachMessage(settings.language === 'es'
-                ? 'El oponente propone revancha.'
-                : 'Opponent offered a rematch.');
-              break;
-
-            case 'rematch-responded':
-              if (data.accepted) {
-                // Reset board
-                const chess = new Chess();
-                chessRef.current = chess;
-                setBoard(chess.board());
-                setTurn('w');
-                setSelectedSquare(null);
-                setPossibleMoves([]);
-                setLastMove(null);
-                setCheckSquare(null);
-                setHistoryStack([]);
-                setRedoStack([]);
-                setActiveMoveIndex(-1);
-                setOpeningName('Standard Theory');
-                setWhiteTime(600);
-                setBlackTime(600);
-                setActiveTurn('w');
-                setGameStatus('active');
-                setWinner(null);
-                setEndReason('');
-                setInGameRematchOffered(false);
-                addCoachMessage(settings.language === 'es'
-                  ? 'Revancha iniciada.'
-                  : 'Rematch started.');
-              } else {
-                setInGameRematchOffered(false);
-                addCoachMessage(settings.language === 'es'
-                  ? 'Propuesta de revancha rechazada.'
-                  : 'Rematch offer declined.');
-              }
-              break;
-
-            case 'chat-message': {
-              const chatMsg: ChatMessage = {
-                id: `chat-${Date.now()}-${Math.random()}`,
-                sender: data.nickname || 'Guest',
-                text: data.text || '',
-                timestamp: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
-              };
-              setChatMessages((prev) => [...prev, chatMsg]);
-              break;
-            }
-
-            case 'opponent-disconnected':
-              addCoachMessage(settings.language === 'es'
-                ? 'El oponente se desconectó.'
-                : 'Opponent disconnected.');
-              setGameStatus('resigned');
-              setWinner(onlinePlayerColor === 'w' ? 'white' : 'black');
-              setEndReason(settings.language === 'es'
-                ? 'Victoria por abandono (desconexión).'
-                : 'Victory by abandonment (disconnection).');
-              break;
-
-            case 'error':
-              setWsError(data.message || 'Error desconocido.');
-              setWsStatus('disconnected');
-              break;
-          }
-        } catch (err) {
-          console.error('Error parsing WS message:', err);
-        }
-      };
+      socket.onmessage = handleWsIncomingMessage;
 
       socket.onerror = (err) => {
         console.error('WebSocket Error:', err);
@@ -1571,6 +1730,39 @@ export default function App() {
 
             {/* Chessboard & Controls Toolbar Center (Col: 6) */}
             <div className="lg:col-span-6 flex flex-col justify-between space-y-6">
+              
+              {/* Mobile / Network Reconnection Status Banners */}
+              {gameMode === 'online' && (isReconnecting || isOpponentOffline) && (
+                <div className="w-full space-y-2">
+                  {isReconnecting && (
+                    <div className="bg-amber-500/15 border border-amber-500/40 text-amber-300 p-3 rounded-xl text-xs font-semibold flex items-center justify-between shadow-lg animate-pulse">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-amber-400 text-base animate-spin">sync</span>
+                        <span>
+                          {settings.language === 'es' ? 'Reconectando con la partida en línea...' : 'Reconnecting to online game...'}
+                        </span>
+                      </div>
+                      <button 
+                        onClick={reconnectOnlineGame}
+                        className="px-2.5 py-1 bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 rounded-lg text-xs font-bold transition cursor-pointer"
+                      >
+                        {settings.language === 'es' ? 'Reintentar' : 'Retry'}
+                      </button>
+                    </div>
+                  )}
+                  {isOpponentOffline && !isReconnecting && (
+                    <div className="bg-blue-500/15 border border-blue-500/40 text-blue-300 p-3 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg">
+                      <span className="material-symbols-outlined text-blue-400 text-base animate-pulse">wifi_off</span>
+                      <span>
+                        {settings.language === 'es'
+                          ? 'El oponente se desconectó temporalmente. Esperando reconexión (hasta 45s)...'
+                          : 'Opponent temporarily disconnected. Waiting for reconnect (up to 45s)...'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <ChessBoard
                 board={board}
                 turn={turn}

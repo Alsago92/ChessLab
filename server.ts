@@ -7,6 +7,8 @@ import { createServer as createViteServer } from 'vite';
 interface PlayerSession {
   nickname: string;
   ws: WebSocket;
+  isOffline?: boolean;
+  graceTimer?: any;
 }
 
 interface GameSession {
@@ -57,6 +59,19 @@ async function startServer() {
     return id;
   }
 
+  // Heartbeat interval to keep mobile sockets alive
+  setInterval(() => {
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(JSON.stringify({ type: 'ping' }));
+        } catch (e) {
+          // ignore
+        }
+      }
+    });
+  }, 12000);
+
   wss.on('connection', (ws: WebSocket) => {
     const sessionState = {
       playerGameId: null as string | null,
@@ -69,6 +84,90 @@ async function startServer() {
         const data = JSON.parse(message);
         
         switch (data.type) {
+          case 'ping': {
+            ws.send(JSON.stringify({ type: 'pong' }));
+            break;
+          }
+
+          case 'pong': {
+            break;
+          }
+
+          case 'rejoin-game': {
+            const { gameId, nickname, playerColor } = data;
+            const targetGameId = (gameId || '').trim().toUpperCase();
+            const game = games.get(targetGameId);
+
+            if (!game) {
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Partida no encontrada o expirada.',
+              }));
+              return;
+            }
+
+            // Determine assigned color
+            let assignedColor: 'w' | 'b' | null = null;
+            if (playerColor === 'w' || playerColor === 'b') {
+              assignedColor = playerColor;
+            } else if (game.white && game.white.nickname === nickname) {
+              assignedColor = 'w';
+            } else if (game.black && game.black.nickname === nickname) {
+              assignedColor = 'b';
+            }
+
+            if (!assignedColor) {
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: 'No perteneces a esta partida.',
+              }));
+              return;
+            }
+
+            // Clear grace timer if running
+            const existingSession = assignedColor === 'w' ? game.white : game.black;
+            if (existingSession && existingSession.graceTimer) {
+              clearTimeout(existingSession.graceTimer);
+              existingSession.graceTimer = null;
+            }
+
+            const newSession: PlayerSession = {
+              nickname,
+              ws,
+              isOffline: false,
+              graceTimer: null,
+            };
+
+            if (assignedColor === 'w') {
+              game.white = newSession;
+            } else {
+              game.black = newSession;
+            }
+
+            sessionState.playerGameId = targetGameId;
+            sessionState.playerColor = assignedColor;
+
+            // Send full restored state to rejoining player
+            ws.send(JSON.stringify({
+              type: 'game-rejoined',
+              gameId: targetGameId,
+              playerColor: assignedColor,
+              fen: game.fen,
+              moves: game.moves,
+              whiteNickname: game.white?.nickname || '',
+              blackNickname: game.black?.nickname || '',
+            }));
+
+            // Notify opponent
+            const opponent = assignedColor === 'w' ? game.black : game.white;
+            if (opponent && opponent.ws && opponent.ws.readyState === WebSocket.OPEN) {
+              opponent.ws.send(JSON.stringify({
+                type: 'opponent-reconnected',
+                nickname,
+              }));
+            }
+            break;
+          }
           case 'join-matchmaking': {
             const { nickname } = data;
             
@@ -369,25 +468,44 @@ async function startServer() {
       if (sessionState.playerGameId) {
         const game = games.get(sessionState.playerGameId);
         if (game) {
-          // Remove disconnecting player from session
-          if (sessionState.playerColor === 'w') {
-            game.white = null;
-          } else if (sessionState.playerColor === 'b') {
-            game.black = null;
-          }
+          const isWhite = sessionState.playerColor === 'w';
+          const playerSession = isWhite ? game.white : game.black;
+          const opponentSession = isWhite ? game.black : game.white;
 
-          // Notify the other player
-          const opponent = sessionState.playerColor === 'w' ? game.black : game.white;
-          if (opponent && opponent.ws.readyState === WebSocket.OPEN) {
-            opponent.ws.send(JSON.stringify({
-              type: 'opponent-disconnected',
-              message: 'El oponente se ha desconectado. / Opponent disconnected.',
-            }));
-          }
+          if (playerSession) {
+            playerSession.isOffline = true;
 
-          // Clean up game if both players are gone
-          if (!game.white && !game.black) {
-            games.delete(sessionState.playerGameId);
+            if (playerSession.graceTimer) {
+              clearTimeout(playerSession.graceTimer);
+            }
+
+            // Send temporary offline alert to opponent
+            if (opponentSession && opponentSession.ws && opponentSession.ws.readyState === WebSocket.OPEN) {
+              opponentSession.ws.send(JSON.stringify({
+                type: 'opponent-offline',
+                message: 'El oponente se desconectó temporalmente. Esperando reconexión...',
+                graceSeconds: 45,
+              }));
+            }
+
+            // Start grace period timer (45 seconds) before declaring permanent forfeit
+            playerSession.graceTimer = setTimeout(() => {
+              if (playerSession.isOffline) {
+                if (isWhite) game.white = null;
+                else game.black = null;
+
+                if (opponentSession && opponentSession.ws && opponentSession.ws.readyState === WebSocket.OPEN) {
+                  opponentSession.ws.send(JSON.stringify({
+                    type: 'opponent-disconnected',
+                    message: 'El oponente no regresó a tiempo (tiempo de gracia agotado).',
+                  }));
+                }
+
+                if ((!game.white || game.white.isOffline) && (!game.black || game.black.isOffline)) {
+                  games.delete(sessionState.playerGameId!);
+                }
+              }
+            }, 45000);
           }
         }
       }
