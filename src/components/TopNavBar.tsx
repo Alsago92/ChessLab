@@ -10,6 +10,7 @@ interface TopNavBarProps {
   toggleTheme: () => void;
   userAvatar: string;
   language: string;
+  wsActiveGameId?: string | null;
 }
 
 export const TopNavBar: React.FC<TopNavBarProps> = ({
@@ -20,7 +21,17 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   toggleTheme,
   userAvatar,
   language,
+  wsActiveGameId,
 }) => {
+  const [copiedSession, setCopiedSession] = React.useState(false);
+
+  const handleCopySession = () => {
+    if (wsActiveGameId) {
+      navigator.clipboard.writeText(wsActiveGameId);
+      setCopiedSession(true);
+      setTimeout(() => setCopiedSession(false), 2000);
+    }
+  };
   return (
     <header 
       id="top-nav-bar" 
@@ -92,6 +103,28 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       {/* Quick Status, Theme and Profile controls */}
       <div className="flex items-center gap-3">
         
+        {/* Active Session ID Badge */}
+        {wsActiveGameId && (
+          <button
+            id="nav-session-id-badge"
+            onClick={handleCopySession}
+            className={`flex items-center gap-1.5 px-3 py-1 border rounded-full transition-all duration-200 cursor-pointer ${
+              isDarkMode
+                ? 'bg-blue-950/40 border-blue-800/60 text-blue-300 hover:bg-blue-900/40'
+                : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+            }`}
+            title={language === 'es' ? 'Haz clic para copiar el número de sesión' : 'Click to copy session number'}
+          >
+            <span className="material-symbols-outlined text-xs">key</span>
+            <span className="text-[10px] font-mono font-bold tracking-wider">
+              {language === 'es' ? 'Sesión' : 'Session'}: #{wsActiveGameId}
+            </span>
+            <span className="material-symbols-outlined text-xs opacity-70">
+              {copiedSession ? 'check' : 'content_copy'}
+            </span>
+          </button>
+        )}
+
         {/* Connection Status Badge */}
         <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1 border rounded-full transition-colors duration-300 ${
           isDarkMode ? 'bg-neutral-950/50 border-neutral-800' : 'bg-neutral-100 border-neutral-200'

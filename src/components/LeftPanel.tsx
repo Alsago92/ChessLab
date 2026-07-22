@@ -13,6 +13,7 @@ interface LeftPanelProps {
   blackTime: number; // in seconds
   gameStatus: string;
   language: string;
+  wsActiveGameId?: string | null;
 }
 
 export const LeftPanel: React.FC<LeftPanelProps> = ({
@@ -26,6 +27,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   blackTime,
   gameStatus,
   language,
+  wsActiveGameId,
 }) => {
   // Format seconds to mm:ss or mm:ss.t if under 10 seconds
   const formatTime = (timeInSeconds: number): string => {
@@ -79,9 +81,16 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       {/* Header Info */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-full uppercase tracking-wider">
-            {modeLabel}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-full uppercase tracking-wider">
+              {modeLabel}
+            </span>
+            {wsActiveGameId && (
+              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full" title="ID de Sesión">
+                #{wsActiveGameId}
+              </span>
+            )}
+          </div>
           <span className="text-xs text-neutral-400 font-medium flex items-center gap-1">
             <span className="material-symbols-outlined text-xs">hourglass_empty</span>
             {getTranslation(language, 'move')} {moveNumber}

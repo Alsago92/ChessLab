@@ -171,11 +171,23 @@ async function startServer() {
           case 'join-matchmaking': {
             const { nickname } = data;
             
-            // Remove from queue if already present
-            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws);
+            // Clean up queue: remove self (same ws or same nickname) and closed sockets
+            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws && p.nickname !== nickname && p.ws.readyState === WebSocket.OPEN);
 
-            if (matchmakingQueue.length > 0) {
-              const opponent = matchmakingQueue.shift()!;
+            // If player was hosting an empty waiting private room, clean it up
+            if (sessionState.playerGameId) {
+              const oldGame = games.get(sessionState.playerGameId);
+              if (oldGame && (!oldGame.white || !oldGame.black)) {
+                games.delete(sessionState.playerGameId);
+              }
+              sessionState.playerGameId = null;
+            }
+
+            // Find valid opponent in queue who is NOT the same socket and NOT the same nickname
+            const validOpponentIndex = matchmakingQueue.findIndex(p => p.ws !== ws && p.nickname !== nickname && p.ws.readyState === WebSocket.OPEN);
+
+            if (validOpponentIndex !== -1) {
+              const [opponent] = matchmakingQueue.splice(validOpponentIndex, 1);
               const gameId = generateGameId();
 
               // Random colors
@@ -244,6 +256,18 @@ async function startServer() {
 
           case 'create-game': {
             const { nickname, preferredColor } = data;
+
+            // Remove from matchmaking queue if present
+            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws);
+
+            // Clean up old waiting private room if any
+            if (sessionState.playerGameId) {
+              const oldGame = games.get(sessionState.playerGameId);
+              if (oldGame && (!oldGame.white || !oldGame.black)) {
+                games.delete(sessionState.playerGameId);
+              }
+            }
+
             const gameId = generateGameId();
             
             // Determine color
@@ -282,7 +306,16 @@ async function startServer() {
             if (!game) {
               ws.send(JSON.stringify({
                 type: 'error',
-                message: 'No se encontró la partida con ese código. / Match code not found.',
+                message: 'No se encontró la partida con ese código.',
+              }));
+              return;
+            }
+
+            // Check if player is already in this game
+            if ((game.white && game.white.ws === ws) || (game.black && game.black.ws === ws)) {
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Ya estás en esta partida como anfitrión.',
               }));
               return;
             }

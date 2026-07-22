@@ -173,6 +173,9 @@ export default function App() {
   // Guide Modal
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
+  // Abandon Lobby Modal for Online Arena vs Private Lobby mutual exclusion
+  const [showAbandonLobbyModal, setShowAbandonLobbyModal] = useState<boolean>(false);
+
   // Settings
   const [settings, setSettings] = useState<ChessSettings>(() => {
     const saved = getCookie<ChessSettings>('chess_settings');
@@ -1471,9 +1474,25 @@ export default function App() {
     });
   };
 
+  const handleConfirmAbandonLobby = () => {
+    setShowAbandonLobbyModal(false);
+    handleWebSocketAction({
+      type: 'cancel',
+      nickname: userProfile.name,
+    });
+    setTimeout(() => {
+      startMatchmaking();
+    }, 100);
+  };
+
   // Launch fresh chess match
   const startNewGame = (mode: GameMode = 'local', difficultyLevel?: number) => {
     if (mode === 'online') {
+      // Check if user has an active private lobby code waiting
+      if (wsActiveGameId && gameStatus !== 'active') {
+        setShowAbandonLobbyModal(true);
+        return;
+      }
       startMatchmaking();
       return;
     }
@@ -1686,6 +1705,7 @@ export default function App() {
         toggleTheme={() => setSettings({ ...settings, isDarkMode: !settings.isDarkMode })}
         userAvatar={userProfile.avatar}
         language={settings.language}
+        wsActiveGameId={wsActiveGameId}
       />
 
       {/* Main Body Layout */}
@@ -1725,6 +1745,7 @@ export default function App() {
                 blackTime={blackTime}
                 gameStatus={gameStatus}
                 language={settings.language}
+                wsActiveGameId={wsActiveGameId}
               />
             </div>
 
@@ -1892,6 +1913,46 @@ export default function App() {
         language={settings.language} 
         isDarkMode={settings.isDarkMode} 
       />
+
+      {/* ABANDON LOBBY CONFIRMATION MODAL */}
+      {showAbandonLobbyModal && (
+        <div id="abandon-lobby-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/85 backdrop-blur-sm animate-fade-in">
+          <div className="bg-neutral-900 border border-neutral-800 p-6 sm:p-8 rounded-2xl max-w-md w-full mx-4 shadow-2xl flex flex-col items-center text-center space-y-6">
+            
+            <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center text-amber-400 shadow-inner">
+              <span className="material-symbols-outlined text-3xl">meeting_room</span>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-neutral-100 tracking-tight">
+                {settings.language === 'es' ? '¿Abandonar sala privada actual?' : 'Abandon current private room?'}
+              </h3>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                {settings.language === 'es'
+                  ? `Tienes un código de sala privada activa (#${wsActiveGameId}) esperando a un amigo. Para unirte a la Arena en Línea debes abandonar esta sala.`
+                  : `You have an active private room code (#${wsActiveGameId}) waiting for a friend. To join the Online Arena, you must leave this private room.`}
+              </p>
+            </div>
+
+            <div className="w-full flex flex-col sm:flex-row gap-3 pt-2">
+              <button
+                id="cancel-abandon-lobby-btn"
+                onClick={() => setShowAbandonLobbyModal(false)}
+                className="flex-1 py-3 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                {settings.language === 'es' ? 'Mantener mi Sala' : 'Keep my Room'}
+              </button>
+              <button
+                id="confirm-abandon-lobby-btn"
+                onClick={handleConfirmAbandonLobby}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-red-500/20 cursor-pointer"
+              >
+                {settings.language === 'es' ? 'Abandonar y Buscar' : 'Abandon & Search'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MATCHMAKING OVERLAY MODAL */}
       {isMatchmaking && (

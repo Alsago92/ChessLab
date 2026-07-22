@@ -136,6 +136,36 @@ export const GameModesScreen: React.FC<GameModesScreenProps> = ({
         </p>
       </div>
 
+      {/* Active Private Lobby Banner */}
+      {wsActiveGameId && wsStatus === 'waiting' && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg animate-fade-in">
+          <div className="flex items-center gap-3 text-left">
+            <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center text-amber-400">
+              <span className="material-symbols-outlined text-xl">key</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-neutral-200">
+                  {language === 'es' ? 'Sala Privada Activa:' : 'Active Private Lobby:'}
+                </span>
+                <span className="font-mono font-black text-amber-400 text-sm tracking-wider">
+                  #{wsActiveGameId}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400">
+                {language === 'es' ? 'Esperando a que un amigo se una con este código.' : 'Waiting for a friend to join with this code.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onWebSocketAction({ type: 'cancel', nickname: userNickname })}
+            className="px-3.5 py-1.5 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 rounded-xl text-xs font-bold transition cursor-pointer whitespace-nowrap"
+          >
+            {language === 'es' ? 'Cancelar y Cerrar Sala' : 'Cancel & Close Lobby'}
+          </button>
+        </div>
+      )}
+
       {/* Main Grid: Game Modes */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {modes.map((mode) => (
