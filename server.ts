@@ -171,8 +171,8 @@ async function startServer() {
           case 'join-matchmaking': {
             const { nickname } = data;
             
-            // Clean up queue: remove self (same ws or same nickname) and closed sockets
-            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws && p.nickname !== nickname && p.ws.readyState === WebSocket.OPEN);
+            // Clean up queue: remove self (same ws socket) and closed/closing sockets
+            matchmakingQueue = matchmakingQueue.filter(p => p.ws !== ws && p.ws.readyState === WebSocket.OPEN);
 
             // If player was hosting an empty waiting private room, clean it up
             if (sessionState.playerGameId) {
@@ -183,8 +183,8 @@ async function startServer() {
               sessionState.playerGameId = null;
             }
 
-            // Find valid opponent in queue who is NOT the same socket and NOT the same nickname
-            const validOpponentIndex = matchmakingQueue.findIndex(p => p.ws !== ws && p.nickname !== nickname && p.ws.readyState === WebSocket.OPEN);
+            // Find valid opponent in queue who is NOT the exact same socket
+            const validOpponentIndex = matchmakingQueue.findIndex(p => p.ws !== ws && p.ws.readyState === WebSocket.OPEN);
 
             if (validOpponentIndex !== -1) {
               const [opponent] = matchmakingQueue.splice(validOpponentIndex, 1);

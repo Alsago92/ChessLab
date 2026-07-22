@@ -1374,12 +1374,22 @@ export default function App() {
     gameId?: string;
     preferredColor?: 'w' | 'b' | 'random';
   }) => {
+    // Helper to safely close existing socket without triggering stale callbacks
+    if (wsRef.current) {
+      wsRef.current.onopen = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onclose = null;
+      try {
+        wsRef.current.close();
+      } catch (e) {
+        // ignore
+      }
+      wsRef.current = null;
+    }
+
     // If cancel action
     if (action.type === 'cancel') {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
       setWsStatus('disconnected');
       setWsError(null);
       setWsActiveGameId(null);
@@ -1395,16 +1405,13 @@ export default function App() {
       setWsStatus('connecting');
       setWsError(null);
 
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}`;
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
       socket.onopen = () => {
+        if (wsRef.current !== socket) return;
         if (action.type === 'create') {
           socket.send(JSON.stringify({
             type: 'create-game',
@@ -1425,20 +1432,28 @@ export default function App() {
         }
       };
 
-      socket.onmessage = handleWsIncomingMessage;
+      socket.onmessage = (event) => {
+        if (wsRef.current === socket) {
+          handleWsIncomingMessage(event);
+        }
+      };
 
       socket.onerror = (err) => {
-        console.error('WebSocket Error:', err);
-        setWsError(settings.language === 'es'
-          ? 'Error al conectar con el servidor.'
-          : 'Failed to connect to matchmaker server.');
-        setWsStatus('disconnected');
-        setIsMatchmaking(false);
+        if (wsRef.current === socket) {
+          console.error('WebSocket Error:', err);
+          setWsError(settings.language === 'es'
+            ? 'Error al conectar con el servidor.'
+            : 'Failed to connect to matchmaker server.');
+          setWsStatus('disconnected');
+          setIsMatchmaking(false);
+        }
       };
 
       socket.onclose = () => {
-        setWsStatus('disconnected');
-        setIsMatchmaking(false);
+        if (wsRef.current === socket) {
+          setWsStatus('disconnected');
+          setIsMatchmaking(false);
+        }
       };
 
     } catch (err) {
