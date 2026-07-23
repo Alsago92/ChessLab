@@ -29,6 +29,7 @@ import { GameModesScreen } from './components/GameModesScreen';
 import { PlayerProfileScreen } from './components/PlayerProfileScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { PieceGuideModal } from './components/PieceGuideModal';
+import { PuzzleModule } from './components/PuzzleModule';
 
 // Custom lightweight sound synthesiser using Web Audio API
 const playChessSound = (type: 'move' | 'capture' | 'check' | 'gameover', allowed: boolean) => {
@@ -1502,6 +1503,17 @@ export default function App() {
 
   // Launch fresh chess match
   const startNewGame = (mode: GameMode = 'local', difficultyLevel?: number) => {
+    // If attempting to start a new game while an online match is active, automatically resign first
+    if (gameMode === 'online' && gameStatus === 'active') {
+      handleResign();
+      return;
+    }
+
+    if (mode === 'puzzle') {
+      changeScreen('puzzles');
+      return;
+    }
+
     if (mode === 'online') {
       // Check if user has an active private lobby code waiting
       if (wsActiveGameId && gameStatus !== 'active') {
@@ -1743,6 +1755,26 @@ export default function App() {
           />
         )}
 
+        {/* SCREEN 1.5: GUIDED TACTICAL PUZZLES MODULE */}
+        {currentScreen === 'puzzles' && (
+          <PuzzleModule
+            settings={settings}
+            language={settings.language}
+            onReturnToModes={() => changeScreen('modes')}
+            onUpdateUserStats={(newRating) => {
+              setPlayerStats((prev) => {
+                const updated = {
+                  ...prev,
+                  currentRating: Math.max(prev.currentRating, newRating),
+                  highestRating: Math.max(prev.highestRating, newRating),
+                };
+                setCookie('chess_player_stats', updated);
+                return updated;
+              });
+            }}
+          />
+        )}
+
         {/* SCREEN 2: ACTIVE CHESS GAME DASHBOARD */}
         {currentScreen === 'game' && (
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -1819,7 +1851,13 @@ export default function App() {
               />
 
               <BottomToolbar
-                onNewGame={() => startNewGame('local')}
+                onNewGame={() => {
+                  if (gameMode === 'online' && gameStatus === 'active') {
+                    handleResign();
+                  } else {
+                    startNewGame('local');
+                  }
+                }}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 onOfferDraw={handleOfferDraw}
@@ -1830,6 +1868,7 @@ export default function App() {
                 canUndo={historyStack.length > 0}
                 canRedo={redoStack.length > 0}
                 gameActive={gameStatus === 'active'}
+                gameMode={gameMode}
                 language={settings.language}
               />
             </div>

@@ -13,6 +13,7 @@ interface BottomToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   gameActive: boolean;
+  gameMode?: string;
   language: string;
 }
 
@@ -28,6 +29,7 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   canUndo,
   canRedo,
   gameActive,
+  gameMode,
   language,
 }) => {
   return (
@@ -118,14 +120,16 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
           <span>{getTranslation(language, 'settings')}</span>
         </button>
 
-        <button
-          id="toolbar-btn-new-game"
-          onClick={onNewGame}
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition duration-150 shadow-md"
-        >
-          <span className="material-symbols-outlined text-sm">add_circle</span>
-          <span>{getTranslation(language, 'newMatch')}</span>
-        </button>
+        {!(gameMode === 'online' && gameActive) && (
+          <button
+            id="toolbar-btn-new-game"
+            onClick={onNewGame}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition duration-150 shadow-md cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">add_circle</span>
+            <span>{getTranslation(language, 'newMatch')}</span>
+          </button>
+        )}
       </div>
     </div>
   );

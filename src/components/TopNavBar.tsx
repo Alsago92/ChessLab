@@ -73,6 +73,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       }`}>
         {[
           { id: 'modes', label: getTranslation(language, 'playLobby'), icon: 'sports_esports' },
+          { id: 'puzzles', label: language === 'es' ? 'Puzzles Tácticos' : 'Tactical Puzzles', icon: 'extension' },
           { id: 'game', label: getTranslation(language, 'chessboard'), icon: 'grid_view' },
           { id: 'profile', label: getTranslation(language, 'myStats'), icon: 'person' },
           { id: 'settings', label: getTranslation(language, 'settings'), icon: 'settings' },

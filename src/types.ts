@@ -6,7 +6,7 @@
 export type BoardTheme = 'classic' | 'wood' | 'emerald' | 'dark';
 export type PieceTheme = 'modern' | 'realistic' | 'neo' | 'glass';
 export type GameMode = 'local' | 'computer' | 'online' | 'puzzle' | 'analysis' | 'pgn' | 'tournament' | 'training';
-export type AppScreen = 'modes' | 'game' | 'lobby' | 'profile' | 'settings';
+export type AppScreen = 'modes' | 'game' | 'lobby' | 'profile' | 'settings' | 'puzzles';
 export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical' | 'custom';
 
 export interface Player {

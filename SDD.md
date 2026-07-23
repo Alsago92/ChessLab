@@ -99,7 +99,10 @@ src/
     ├── SettingsScreen.tsx     # Custom Themes, Sound, Speed, Coordinates
     ├── BoneyardSkeleton.tsx   # Visual Captured Piece Tracker
     ├── PieceGuideModal.tsx    # Educational Piece Movement Modal
-    └── PieceSvg.tsx           # Vector Renderers for Chess Pieces
+    ├── PieceSvg.tsx           # Vector Renderers for Chess Pieces
+    └── PuzzleModule.tsx       # Interactive Guided Tactical Puzzles & Pattern Drills
+└── data/
+    └── puzzlesData.ts         # Verified Real-World Tactical Puzzles Dataset
 ```
 
 ### 4.2 State Management
