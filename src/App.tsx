@@ -33,6 +33,7 @@ import { PuzzleModule } from './components/PuzzleModule';
 import { VersionControlModal } from './components/VersionControlModal';
 import { AnalysisToolbar } from './components/AnalysisToolbar';
 import { AnalysisLoadModal } from './components/AnalysisLoadModal';
+import { parsePgnGames, safelyLoadPgn } from './utils/pgnParser';
 
 // Custom lightweight sound synthesiser using Web Audio API
 const playChessSound = (type: 'move' | 'capture' | 'check' | 'gameover', allowed: boolean) => {
@@ -566,10 +567,17 @@ export default function App() {
     }
   };
 
-  const handleLoadPgn = (pgn: string): boolean => {
+  const handleLoadPgn = (pgnText: string): boolean => {
     try {
+      const parsedGames = parsePgnGames(pgnText);
+      if (parsedGames.length === 0) return false;
+
+      // Select game 1 or passed game block
+      const gameToLoad = parsedGames[0].pgn;
+
       const chess = new Chess();
-      chess.loadPgn(pgn);
+      const loaded = safelyLoadPgn(chess, gameToLoad);
+      if (!loaded) return false;
 
       chessRef.current = chess;
       setBoard(chess.board());
