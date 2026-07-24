@@ -30,6 +30,7 @@ import { PlayerProfileScreen } from './components/PlayerProfileScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { PieceGuideModal } from './components/PieceGuideModal';
 import { PuzzleModule } from './components/PuzzleModule';
+import { VersionControlModal } from './components/VersionControlModal';
 
 // Custom lightweight sound synthesiser using Web Audio API
 const playChessSound = (type: 'move' | 'capture' | 'check' | 'gameover', allowed: boolean) => {
@@ -173,6 +174,7 @@ export default function App() {
 
   // Guide Modal
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+  const [showVersionModal, setShowVersionModal] = useState<boolean>(false);
 
   // Abandon Lobby Modal for Online Arena vs Private Lobby mutual exclusion
   const [showAbandonLobbyModal, setShowAbandonLobbyModal] = useState<boolean>(false);
@@ -1735,6 +1737,7 @@ export default function App() {
         userAvatar={userProfile.avatar}
         language={settings.language}
         wsActiveGameId={wsActiveGameId}
+        onOpenVersionControl={() => setShowVersionModal(true)}
       />
 
       {/* Main Body Layout */}
@@ -1957,6 +1960,7 @@ export default function App() {
             settings={settings}
             onChangeSettings={(newSet) => setSettings({ ...settings, ...newSet })}
             onClose={() => setCurrentScreen(previousScreen)}
+            onOpenVersionControl={() => setShowVersionModal(true)}
           />
         )}
 
@@ -2120,6 +2124,14 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* VERSION CONTROL & CHANGELOG MODAL */}
+      <VersionControlModal
+        isOpen={showVersionModal}
+        onClose={() => setShowVersionModal(false)}
+        language={settings.language}
+        isDarkMode={settings.isDarkMode}
+      />
     </div>
   );
 }

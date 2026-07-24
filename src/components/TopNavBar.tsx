@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppScreen } from '../types';
 import { getTranslation } from '../utils/translations';
+import { CURRENT_VERSION } from '../data/versionHistory';
 
 interface TopNavBarProps {
   currentScreen: AppScreen;
@@ -11,6 +12,7 @@ interface TopNavBarProps {
   userAvatar: string;
   language: string;
   wsActiveGameId?: string | null;
+  onOpenVersionControl?: () => void;
 }
 
 export const TopNavBar: React.FC<TopNavBarProps> = ({
@@ -22,6 +24,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   userAvatar,
   language,
   wsActiveGameId,
+  onOpenVersionControl,
 }) => {
   const [copiedSession, setCopiedSession] = React.useState(false);
 
@@ -42,7 +45,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       }`}
     >
       
-      {/* Brand Logo & Title */}
+      {/* Brand Logo, Title & Version Badge */}
       <div className="flex items-center gap-2.5">
         <button 
           id="nav-logo-btn"
@@ -50,21 +53,40 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
           className="flex items-center gap-2.5 hover:opacity-95 transition active:scale-95 group cursor-pointer"
         >
           <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:rotate-12 transition-transform duration-300">
-            <span className="material-symbols-outlined text-white text-xl font-bold">star</span>
+            <span className="material-symbols-outlined text-white text-xl font-bold">sports_esports</span>
           </div>
           <div className="text-left">
-            <h1 className={`header-title text-sm font-bold tracking-tight leading-tight transition-colors duration-300 ${
-              isDarkMode ? 'text-neutral-100' : 'text-neutral-850'
-            }`}>
-              Material Chess
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className={`header-title text-sm font-bold tracking-tight leading-tight transition-colors duration-300 ${
+                isDarkMode ? 'text-neutral-100' : 'text-neutral-850'
+              }`}>
+                ChessLab
+              </h1>
+            </div>
             <p className={`text-[10px] font-medium transition-colors duration-300 ${
               isDarkMode ? 'text-neutral-400' : 'text-neutral-500'
             }`}>
-              {getTranslation(language, 'dashboard')} v10.0
+              {getTranslation(language, 'dashboard')}
             </p>
           </div>
         </button>
+
+        {/* Clickable Version Control Badge */}
+        {onOpenVersionControl && (
+          <button
+            id="nav-version-badge-btn"
+            onClick={onOpenVersionControl}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1 transition duration-150 cursor-pointer border ${
+              isDarkMode
+                ? 'bg-blue-950/50 hover:bg-blue-900/60 border-blue-800/60 text-blue-300'
+                : 'bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700'
+            }`}
+            title={language === 'es' ? 'Ver Control de Versiones e Historial de Cambios' : 'View Version Control & Changelog'}
+          >
+            <span className="material-symbols-outlined text-xs">history</span>
+            <span>v{CURRENT_VERSION}</span>
+          </button>
+        )}
       </div>
 
       {/* Screen navigation tabs */}

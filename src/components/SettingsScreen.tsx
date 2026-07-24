@@ -6,12 +6,14 @@ interface SettingsScreenProps {
   settings: ChessSettings;
   onChangeSettings: (settings: ChessSettings) => void;
   onClose?: () => void;
+  onOpenVersionControl?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   onChangeSettings,
   onClose,
+  onOpenVersionControl,
 }) => {
   const [draft, setDraft] = useState<ChessSettings>(settings);
   const [showSavedSuccess, setShowSavedSuccess] = useState(false);
@@ -225,11 +227,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       </div>
 
-      {/* Explicit Save Bar at bottom */}
+      {/* Explicit Save Bar & Version Info at bottom */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-neutral-900 border border-neutral-800/60 rounded-2xl shadow-md">
-        <span className="text-xs text-neutral-400 text-center sm:text-left leading-normal max-w-md">
-          These settings are mapped to local cache storage and will persist automatically upon reloading. Tailored for Blazor Hybrid layout wrappers.
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-neutral-400 text-center sm:text-left leading-normal max-w-sm">
+            {lang === 'es'
+              ? 'Configuraciones persistidas en almacenamiento local.'
+              : 'Settings persisted in local browser storage.'}
+          </span>
+          {onOpenVersionControl && (
+            <button
+              id="settings-version-control-btn"
+              onClick={onOpenVersionControl}
+              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-blue-400 border border-neutral-700/60 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+            >
+              <span className="material-symbols-outlined text-sm">history</span>
+              <span>ChessLab v1.2.0</span>
+            </button>
+          )}
+        </div>
         <button
           id="settings-save-bottom-btn"
           onClick={handleSave}
