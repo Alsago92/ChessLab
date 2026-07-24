@@ -20,6 +20,7 @@ interface ChessBoardProps {
   onRematch: () => void;
   onReturnHome: () => void;
   language: string;
+  gameMode?: string;
 }
 
 export const ChessBoard: React.FC<ChessBoardProps> = ({
@@ -39,6 +40,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   onRematch,
   onReturnHome,
   language,
+  gameMode,
 }) => {
   const [promotingMove, setPromotingMove] = useState<{ from: string; to: string } | null>(null);
 
@@ -151,10 +153,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
             const originalFileIdx = files.indexOf(file);
             const squareName = `${file}${rank}`;
             const piece = board[boardRowIdx][originalFileIdx];
+            const isOnlineGame = gameMode === 'online';
             const isSquareSelected = selectedSquare === squareName;
             const isPossibleMove = possibleMoves.includes(squareName);
-            const isLastMoveFrom = lastMove && lastMove.from === squareName;
-            const isLastMoveTo = lastMove && lastMove.to === squareName;
+            const isLastMoveFrom = isOnlineGame && lastMove && lastMove.from === squareName;
+            const isLastMoveTo = isOnlineGame && lastMove && lastMove.to === squareName;
             const isCheckSquare = checkSquare === squareName;
 
             // Compute background color of the square
@@ -241,8 +244,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
         })}
       </div>
 
-      {/* SVG Directional Arrow Overlay for Last Move */}
-      {lastMove && (
+      {/* SVG Directional Arrow Overlay for Last Move (Online games only) */}
+      {gameMode === 'online' && lastMove && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
           <defs>
             <marker

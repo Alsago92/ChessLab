@@ -14,9 +14,39 @@ export interface VersionInfo {
   changes: VersionChange[];
 }
 
-export const CURRENT_VERSION = '1.2.0';
+export const CURRENT_VERSION = '1.2.1';
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    version: '1.2.1',
+    date: '2026-07-24',
+    title: {
+      en: 'Local Pass & Play Fixes & Exclusive Online Move Indicators',
+      es: 'Corrección de Pasar y Jugar Local e Indicadores Exclusivos Online',
+    },
+    type: 'patch',
+    isCurrent: true,
+    changes: [
+      {
+        category: 'fix',
+        icon: 'groups',
+        title: { en: 'Local Pass & Play Module Fix', es: 'Corrección del Módulo Pasar y Jugar (Local PvP)' },
+        description: {
+          en: 'Resolved turn selection and move constraints in Pass & Play mode so two local players can make moves seamlessly without interference from background network sessions.',
+          es: 'Se corrigió la selección de piezas y restricciones de turno en Pasar y Jugar para que ambos jugadores locales jueguen fluidamente sin interferencia de conexiones en segundo plano.',
+        },
+      },
+      {
+        category: 'improvement',
+        icon: 'alt_route',
+        title: { en: 'Exclusive Move Indicators for Online Matches', es: 'Indicadores de Movimiento Exclusivos para Partidas Online' },
+        description: {
+          en: 'Configured last-move square highlights and vector trajectory lines on the board to display exclusively during Online Arena matches.',
+          es: 'Se configuraron las líneas de trayectoria y destacados de último movimiento para mostrarse únicamente durante partidas de la Arena Online.',
+        },
+      },
+    ],
+  },
   {
     version: '1.2.0',
     date: '2026-07-24',
@@ -25,7 +55,7 @@ export const VERSION_HISTORY: VersionInfo[] = [
       es: 'Reinvención ChessLab, Ajustes Online e Indicadores de Movimiento',
     },
     type: 'minor',
-    isCurrent: true,
+    isCurrent: false,
     changes: [
       {
         category: 'ui',

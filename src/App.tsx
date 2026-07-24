@@ -715,7 +715,7 @@ export default function App() {
     const piece = chess.get(square as any);
 
     // If online WebSocket mode, enforce piece color selection based on assigned color
-    if (wsStatus === 'connected' && piece && piece.color !== onlinePlayerColor) {
+    if (gameMode === 'online' && wsStatus === 'connected' && piece && piece.color !== onlinePlayerColor) {
       return;
     }
 
@@ -735,7 +735,7 @@ export default function App() {
     const chess = chessRef.current;
 
     // Enforce real-time turn constraint if connected online
-    if (wsStatus === 'connected' && turn !== onlinePlayerColor) {
+    if (gameMode === 'online' && wsStatus === 'connected' && turn !== onlinePlayerColor) {
       addCoachMessage(settings.language === 'es'
         ? 'No es tu turno. Espera al oponente.'
         : 'It is not your turn. Wait for the opponent.');
@@ -757,8 +757,8 @@ export default function App() {
       setSelectedSquare(null);
       setPossibleMoves([]);
 
-      // Propagate move via WebSocket if connected
-      if (wsStatus === 'connected' && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Propagate move via WebSocket if connected online
+      if (gameMode === 'online' && wsStatus === 'connected' && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'make-move',
           gameId: wsActiveGameId,
@@ -1528,6 +1528,15 @@ export default function App() {
       return;
     }
 
+    // Reset online WebSocket state if launching non-online modes (local, computer, etc.)
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setWsStatus('disconnected');
+    setWsActiveGameId(null);
+    setOnlinePlayerColor(null);
+
     const chess = new Chess();
     chessRef.current = chess;
     
@@ -1853,6 +1862,7 @@ export default function App() {
                 onRematch={() => startNewGame(gameMode)}
                 onReturnHome={() => changeScreen('modes')}
                 language={settings.language}
+                gameMode={gameMode}
               />
 
               <BottomToolbar
@@ -1860,7 +1870,7 @@ export default function App() {
                   if (gameMode === 'online' && gameStatus === 'active') {
                     handleResign();
                   } else {
-                    startNewGame('local');
+                    startNewGame(gameMode);
                   }
                 }}
                 onUndo={handleUndo}
