@@ -31,6 +31,8 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { PieceGuideModal } from './components/PieceGuideModal';
 import { PuzzleModule } from './components/PuzzleModule';
 import { VersionControlModal } from './components/VersionControlModal';
+import { AnalysisToolbar } from './components/AnalysisToolbar';
+import { AnalysisLoadModal } from './components/AnalysisLoadModal';
 
 // Custom lightweight sound synthesiser using Web Audio API
 const playChessSound = (type: 'move' | 'capture' | 'check' | 'gameover', allowed: boolean) => {
@@ -171,6 +173,10 @@ export default function App() {
 
   // Engine Status
   const [isEngineThinking, setIsEngineThinking] = useState<boolean>(false);
+  const [isEngineActive, setIsEngineActive] = useState<boolean>(true);
+
+  // Analysis Load Modal
+  const [showAnalysisLoadModal, setShowAnalysisLoadModal] = useState<boolean>(false);
 
   // Guide Modal
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
@@ -532,6 +538,144 @@ export default function App() {
       }
     }
     return null;
+  };
+
+  // Analysis Board position and game loaders
+  const handleLoadFen = (fen: string): boolean => {
+    try {
+      const chess = new Chess(fen);
+
+      chessRef.current = chess;
+      setBoard(chess.board());
+      setTurn(chess.turn());
+      setSelectedSquare(null);
+      setPossibleMoves([]);
+      setLastMove(null);
+      setCheckSquare(chess.inCheck() ? findKingSquare(chess.turn()) : null);
+      setHistoryStack([]);
+      setRedoStack([]);
+      setActiveMoveIndex(-1);
+
+      if (isEngineActive) {
+        simulateEngineAnalysis(fen, chess.turn());
+      }
+      return true;
+    } catch (e) {
+      console.error('Failed to load FEN:', e);
+      return false;
+    }
+  };
+
+  const handleLoadPgn = (pgn: string): boolean => {
+    try {
+      const chess = new Chess();
+      chess.loadPgn(pgn);
+
+      chessRef.current = chess;
+      setBoard(chess.board());
+      setTurn(chess.turn());
+      setSelectedSquare(null);
+      setPossibleMoves([]);
+      setCheckSquare(chess.inCheck() ? findKingSquare(chess.turn()) : null);
+      setRedoStack([]);
+
+      // Map loaded history
+      const historyVerbose = chess.history({ verbose: true });
+      const mappedHistory: MoveHistoryItem[] = historyVerbose.map((m, idx) => ({
+        san: m.san,
+        from: m.from,
+        to: m.to,
+        piece: m.piece,
+        color: m.color,
+        fenAfter: m.after,
+        moveNumber: Math.floor(idx / 2) + 1,
+      }));
+
+      setHistoryStack(mappedHistory);
+      if (mappedHistory.length > 0) {
+        const lastM = mappedHistory[mappedHistory.length - 1];
+        setLastMove({ from: lastM.from, to: lastM.to });
+      } else {
+        setLastMove(null);
+      }
+
+      if (isEngineActive) {
+        simulateEngineAnalysis(chess.fen(), chess.turn());
+      }
+      return true;
+    } catch (e) {
+      console.error('Failed to load PGN:', e);
+      return false;
+    }
+  };
+
+  const handleClearBoard = () => {
+    try {
+      const chess = new Chess('8/8/8/8/8/8/8/8 w - - 0 1');
+      chessRef.current = chess;
+      setBoard(chess.board());
+      setTurn('w');
+      setSelectedSquare(null);
+      setPossibleMoves([]);
+      setLastMove(null);
+      setCheckSquare(null);
+      setHistoryStack([]);
+      setRedoStack([]);
+    } catch (e) {
+      console.error('Clear board failed:', e);
+    }
+  };
+
+  const handleResetBoard = () => {
+    const chess = new Chess();
+    chessRef.current = chess;
+    setBoard(chess.board());
+    setTurn('w');
+    setSelectedSquare(null);
+    setPossibleMoves([]);
+    setLastMove(null);
+    setCheckSquare(null);
+    setHistoryStack([]);
+    setRedoStack([]);
+    setOpeningName('Standard Theory');
+    if (isEngineActive) {
+      simulateEngineAnalysis(chess.fen(), 'w');
+    }
+  };
+
+  const handleMakeSanMove = (san: string) => {
+    try {
+      const chess = chessRef.current;
+      const moveResult = chess.move(san);
+      if (!moveResult) return;
+
+      setBoard(chess.board());
+      setTurn(chess.turn());
+      setSelectedSquare(null);
+      setPossibleMoves([]);
+      setLastMove({ from: moveResult.from, to: moveResult.to });
+      setCheckSquare(chess.inCheck() ? findKingSquare(chess.turn()) : null);
+
+      const historyItem: MoveHistoryItem = {
+        san: moveResult.san,
+        from: moveResult.from,
+        to: moveResult.to,
+        piece: moveResult.piece,
+        color: moveResult.color,
+        fenAfter: chess.fen(),
+        moveNumber: Math.floor(historyStack.length / 2) + 1,
+      };
+
+      setHistoryStack((prev) => [...prev, historyItem]);
+      setRedoStack([]);
+      playChessSound('move', settings.soundEffects);
+
+      if (isEngineActive) {
+        simulateEngineAnalysis(chess.fen(), chess.turn());
+      }
+    } catch (e) {
+      console.error('Error playing SAN move:', e);
+    }
   };
 
   // Heuristic-based computer engine move logic
@@ -1813,6 +1957,24 @@ export default function App() {
             {/* Chessboard & Controls Toolbar Center (Col: 6) */}
             <div className="lg:col-span-6 flex flex-col justify-between space-y-6">
               
+              {/* Analysis Board Specialized Control Toolbar */}
+              {gameMode === 'analysis' && (
+                <AnalysisToolbar
+                  onOpenLoadModal={() => setShowAnalysisLoadModal(true)}
+                  isEngineActive={isEngineActive}
+                  onToggleEngine={() => setIsEngineActive(!isEngineActive)}
+                  evalScore={engineAnalysis.evalScore}
+                  isEngineThinking={isEngineThinking}
+                  onFlipBoard={handleFlipBoard}
+                  onResetBoard={handleResetBoard}
+                  onClearBoard={handleClearBoard}
+                  currentFen={chessRef.current.fen()}
+                  currentPgn={chessRef.current.pgn()}
+                  language={settings.language}
+                  isDarkMode={settings.isDarkMode}
+                />
+              )}
+
               {/* Mobile / Network Reconnection Status Banners */}
               {gameMode === 'online' && (isReconnecting || isOpponentOffline) && (
                 <div className="w-full space-y-2">
@@ -1947,6 +2109,9 @@ export default function App() {
                 }}
                 isEngineThinking={isEngineThinking}
                 language={settings.language}
+                onMakeMove={handleMakeSanMove}
+                currentFen={chessRef.current.fen()}
+                gameMode={gameMode}
               />
             </div>
 
@@ -2134,6 +2299,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ANALYSIS BOARD LOAD MODAL */}
+      <AnalysisLoadModal
+        isOpen={showAnalysisLoadModal}
+        onClose={() => setShowAnalysisLoadModal(false)}
+        onLoadFen={handleLoadFen}
+        onLoadPgn={handleLoadPgn}
+        currentFen={chessRef.current.fen()}
+        currentPgn={chessRef.current.pgn()}
+        language={settings.language}
+        isDarkMode={settings.isDarkMode}
+      />
 
       {/* VERSION CONTROL & CHANGELOG MODAL */}
       <VersionControlModal

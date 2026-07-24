@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChessSettings, BoardTheme, PieceTheme } from '../types';
 import { getTranslation } from '../utils/translations';
+import { CURRENT_VERSION } from '../data/versionHistory';
 
 interface SettingsScreenProps {
   settings: ChessSettings;
@@ -242,7 +243,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-blue-400 border border-neutral-700/60 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0"
             >
               <span className="material-symbols-outlined text-sm">history</span>
-              <span>ChessLab v1.2.0</span>
+              <span>ChessLab v{CURRENT_VERSION}</span>
             </button>
           )}
         </div>

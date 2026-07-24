@@ -3,6 +3,7 @@ import { MoveHistoryItem, CapturedPieces, EngineAnalysis, ChatMessage } from '..
 import { PieceSvg } from './PieceSvg';
 import { getTranslation } from '../utils/translations';
 import { BoneyardSkeleton } from './BoneyardSkeleton';
+import { OpeningExplorer } from './OpeningExplorer';
 
 interface RightPanelProps {
   moveHistory: MoveHistoryItem[];
@@ -15,6 +16,9 @@ interface RightPanelProps {
   onSendMessage: (text: string) => void;
   isEngineThinking: boolean;
   language: string;
+  onMakeMove?: (san: string) => void;
+  currentFen?: string;
+  gameMode?: string;
 }
 
 export const RightPanel: React.FC<RightPanelProps> = ({
@@ -28,6 +32,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   onSendMessage,
   isEngineThinking,
   language,
+  onMakeMove,
+  currentFen,
+  gameMode,
 }) => {
   const [activeTab, setActiveTab] = useState<'moves' | 'captured' | 'analysis' | 'chat'>('moves');
   const [chatInput, setChatInput] = useState('');
@@ -393,37 +400,34 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               {/* Best continuation */}
               <div className="p-3.5 bg-neutral-950/20 border border-neutral-800/60 rounded-xl space-y-2">
                 <h5 className="text-xs font-semibold text-neutral-300 uppercase tracking-tight">{getTranslation(language, 'bestContinuation')}</h5>
-                <div className="flex gap-2.5">
+                <div className="flex flex-wrap gap-2">
                   {engineAnalysis.bestContinuation.length === 0 ? (
                     <span className="text-xs text-neutral-500 italic">{getTranslation(language, 'noContinuationLines')}</span>
                   ) : (
                     engineAnalysis.bestContinuation.map((move, i) => (
-                      <span key={i} className="px-2.5 py-1 bg-neutral-800 text-neutral-200 border border-neutral-700/50 rounded-lg text-xs font-mono font-semibold">
-                        {i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ''}{move}
-                      </span>
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => onMakeMove && onMakeMove(move)}
+                        className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/50 hover:border-blue-500/50 rounded-lg text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1"
+                        title={language === 'es' ? `Ejecutar jugada ${move} en el tablero` : `Play move ${move} on board`}
+                      >
+                        <span>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ''}{move}</span>
+                        <span className="material-symbols-outlined text-[10px] text-blue-400">play_arrow</span>
+                      </button>
                     ))
                   )}
                 </div>
               </div>
 
-              {/* Opening Explorer Stats */}
-              <div className="p-3.5 bg-neutral-950/20 border border-neutral-800/60 rounded-xl space-y-2.5">
-                <h5 className="text-xs font-semibold text-neutral-300 uppercase tracking-tight">{getTranslation(language, 'openingExplorerStats')}</h5>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-medium">
-                    <span className="text-neutral-400">{getTranslation(language, 'whiteWinsLabel')}</span>
-                    <span className="text-emerald-400 font-bold">42.5%</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-medium">
-                    <span className="text-neutral-400">{getTranslation(language, 'drawRatioLabel')}</span>
-                    <span className="text-neutral-300 font-bold">28.0%</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-medium">
-                    <span className="text-neutral-400">{getTranslation(language, 'blackWinsLabel')}</span>
-                    <span className="text-sky-400 font-bold">29.5%</span>
-                  </div>
-                </div>
-              </div>
+              {/* Dynamic Opening Explorer Component */}
+              <OpeningExplorer
+                moveHistorySan={moveHistory.map((m) => m.san)}
+                currentFen={currentFen || ''}
+                onMakeMove={(san) => onMakeMove && onMakeMove(san)}
+                language={language}
+                isDarkMode={true}
+              />
 
             </div>
 

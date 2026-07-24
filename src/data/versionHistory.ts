@@ -14,9 +14,69 @@ export interface VersionInfo {
   changes: VersionChange[];
 }
 
-export const CURRENT_VERSION = '1.2.1';
+export const CURRENT_VERSION = '1.3.0';
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    version: '1.3.0',
+    date: '2026-07-24',
+    title: {
+      en: 'Complete Analysis Board Module with Opening Explorer & FEN/PGN Loader',
+      es: 'Módulo Completo de Tablero de Análisis con Explorador de Aperturas y Carga FEN/PGN',
+    },
+    type: 'minor',
+    isCurrent: true,
+    changes: [
+      {
+        category: 'feature',
+        icon: 'psychology',
+        title: { en: 'Dedicated Analysis Toolbar', es: 'Barra de Herramientas de Análisis' },
+        description: {
+          en: 'Added instant control panel for engine evaluation toggle, position reset, board clear, board flip, and 1-click FEN/PGN clipboard export.',
+          es: 'Barra de control directo para conmutar evaluación del motor, reiniciar posición, limpiar tablero, girar tablero y copiar FEN/PGN con un clic.',
+        },
+      },
+      {
+        category: 'feature',
+        icon: 'upload_file',
+        title: { en: 'FEN / PGN Position & Game Loader Modal', es: 'Modal de Carga de Posiciones FEN y Partidas PGN' },
+        description: {
+          en: 'Import any custom FEN string or paste complete PGN notation. Includes preset library with classic openings, endgames (Lucena/Philidor) and tactics.',
+          es: 'Importa cualquier posición FEN o pega partidas PGN completas. Incluye librería preestablecida con aperturas clásicas, finales y tácticas.',
+        },
+      },
+      {
+        category: 'feature',
+        icon: 'menu_book',
+        title: { en: 'Interactive Master Opening Explorer', es: 'Explorador Interactivo de Aperturas de Maestros' },
+        description: {
+          en: 'Real-time opening detection with ECO codes, master win/draw ratios, and interactive candidate moves that play directly on the board when clicked.',
+          es: 'Detección de aperturas en tiempo real con códigos ECO, estadísticas de victoria de Grandes Maestros y jugadas sugeridas ejecutables en el tablero.',
+        },
+      },
+    ],
+  },
+  {
+    version: '1.2.2',
+    date: '2026-07-24',
+    title: {
+      en: 'Refined Online Move Square Highlights',
+      es: 'Indicadores de Movimiento de Casillas en Línea Optimizados',
+    },
+    type: 'patch',
+    isCurrent: false,
+    changes: [
+      {
+        category: 'improvement',
+        icon: 'grid_view',
+        title: { en: 'Streamlined Online Move Indicators', es: 'Indicadores de Movimiento Online Limpios' },
+        description: {
+          en: 'Removed board trajectory arrow overlay and preserved clean, high-contrast origin and destination square highlights for online opponent moves.',
+          es: 'Se eliminó la flecha de trayectoria en el tablero para mantener únicamente los destacados de casillas de origen y destino en jugadas en línea.',
+        },
+      },
+    ],
+  },
   {
     version: '1.2.1',
     date: '2026-07-24',
@@ -25,7 +85,7 @@ export const VERSION_HISTORY: VersionInfo[] = [
       es: 'Corrección de Pasar y Jugar Local e Indicadores Exclusivos Online',
     },
     type: 'patch',
-    isCurrent: true,
+    isCurrent: false,
     changes: [
       {
         category: 'fix',
