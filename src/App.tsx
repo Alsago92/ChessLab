@@ -821,6 +821,7 @@ export default function App() {
 
   // Undo move
   const handleUndo = () => {
+    if (gameMode === 'online') return;
     const chess = chessRef.current;
     if (historyStack.length === 0) return;
 
@@ -851,6 +852,7 @@ export default function App() {
 
   // Redo move
   const handleRedo = () => {
+    if (gameMode === 'online') return;
     const chess = chessRef.current;
     if (redoStack.length === 0) return;
 

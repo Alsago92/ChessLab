@@ -36,35 +36,39 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
     <div id="game-controls-toolbar" className="bg-neutral-900 border border-neutral-800/60 rounded-2xl p-4 shadow-lg flex flex-wrap justify-center sm:justify-between items-center gap-3">
       {/* Undo/Redo & Flip Actions */}
       <div className="flex gap-2">
-        <button
-          id="toolbar-btn-undo"
-          onClick={onUndo}
-          disabled={!canUndo}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition duration-150 border ${
-            canUndo
-              ? 'bg-neutral-800 text-neutral-100 border-neutral-700/50 hover:bg-neutral-700 active:bg-neutral-600'
-              : 'bg-neutral-950/20 text-neutral-600 border-neutral-900 cursor-not-allowed'
-          }`}
-          title={getTranslation(language, 'undoMove')}
-        >
-          <span className="material-symbols-outlined text-sm">undo</span>
-          <span>{getTranslation(language, 'undo')}</span>
-        </button>
+        {gameMode !== 'online' && (
+          <>
+            <button
+              id="toolbar-btn-undo"
+              onClick={onUndo}
+              disabled={!canUndo}
+              className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition duration-150 border ${
+                canUndo
+                  ? 'bg-neutral-800 text-neutral-100 border-neutral-700/50 hover:bg-neutral-700 active:bg-neutral-600'
+                  : 'bg-neutral-950/20 text-neutral-600 border-neutral-900 cursor-not-allowed'
+              }`}
+              title={getTranslation(language, 'undoMove')}
+            >
+              <span className="material-symbols-outlined text-sm">undo</span>
+              <span>{getTranslation(language, 'undo')}</span>
+            </button>
 
-        <button
-          id="toolbar-btn-redo"
-          onClick={onRedo}
-          disabled={!canRedo}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition duration-150 border ${
-            canRedo
-              ? 'bg-neutral-800 text-neutral-100 border-neutral-700/50 hover:bg-neutral-700 active:bg-neutral-600'
-              : 'bg-neutral-950/20 text-neutral-600 border-neutral-900 cursor-not-allowed'
-          }`}
-          title={getTranslation(language, 'redoMove')}
-        >
-          <span className="material-symbols-outlined text-sm">redo</span>
-          <span>{getTranslation(language, 'redo')}</span>
-        </button>
+            <button
+              id="toolbar-btn-redo"
+              onClick={onRedo}
+              disabled={!canRedo}
+              className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition duration-150 border ${
+                canRedo
+                  ? 'bg-neutral-800 text-neutral-100 border-neutral-700/50 hover:bg-neutral-700 active:bg-neutral-600'
+                  : 'bg-neutral-950/20 text-neutral-600 border-neutral-900 cursor-not-allowed'
+              }`}
+              title={getTranslation(language, 'redoMove')}
+            >
+              <span className="material-symbols-outlined text-sm">redo</span>
+              <span>{getTranslation(language, 'redo')}</span>
+            </button>
+          </>
+        )}
 
         <button
           id="toolbar-btn-flip"

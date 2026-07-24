@@ -153,7 +153,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
             const piece = board[boardRowIdx][originalFileIdx];
             const isSquareSelected = selectedSquare === squareName;
             const isPossibleMove = possibleMoves.includes(squareName);
-            const isLastMoveSquare = lastMove && (lastMove.from === squareName || lastMove.to === squareName);
+            const isLastMoveFrom = lastMove && lastMove.from === squareName;
+            const isLastMoveTo = lastMove && lastMove.to === squareName;
             const isCheckSquare = checkSquare === squareName;
 
             // Compute background color of the square
@@ -168,9 +169,18 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, squareName)}
               >
-                {/* Last Move Highlight */}
-                {isLastMoveSquare && (
-                  <div className="absolute inset-0 bg-yellow-400/20 mix-blend-multiply pointer-events-none" />
+                {/* Last Move Origin Square Highlight */}
+                {isLastMoveFrom && (
+                  <div className="absolute inset-0 bg-amber-400/35 border-2 border-dashed border-amber-500/80 pointer-events-none flex items-center justify-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500/90 shadow-sm" />
+                  </div>
+                )}
+
+                {/* Last Move Destination Square Highlight */}
+                {isLastMoveTo && (
+                  <div className="absolute inset-0 bg-amber-400/50 ring-2 ring-amber-400 ring-inset pointer-events-none">
+                    <div className="absolute inset-0 border-2 border-amber-300 animate-ping opacity-60" />
+                  </div>
                 )}
 
                 {/* Selected Square Highlight */}
@@ -230,6 +240,77 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
           });
         })}
       </div>
+
+      {/* SVG Directional Arrow Overlay for Last Move */}
+      {lastMove && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
+          <defs>
+            <marker
+              id="last-move-arrowhead"
+              markerWidth="8"
+              markerHeight="8"
+              refX="6"
+              refY="4"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 4, 0 8" fill="#f59e0b" />
+            </marker>
+          </defs>
+          {(() => {
+            const fromFileIdx = displayFiles.indexOf(lastMove.from[0]);
+            const fromRankIdx = displayRanks.indexOf(lastMove.from[1]);
+            const toFileIdx = displayFiles.indexOf(lastMove.to[0]);
+            const toRankIdx = displayRanks.indexOf(lastMove.to[1]);
+
+            if (fromFileIdx === -1 || fromRankIdx === -1 || toFileIdx === -1 || toRankIdx === -1) return null;
+
+            const x1 = (fromFileIdx + 0.5) * 12.5;
+            const y1 = (fromRankIdx + 0.5) * 12.5;
+            const x2 = (toFileIdx + 0.5) * 12.5;
+            const y2 = (toRankIdx + 0.5) * 12.5;
+
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist === 0) return null;
+
+            const offset = 3.5;
+            const endX = x2 - (dx / dist) * offset;
+            const endY = y2 - (dy / dist) * offset;
+            const startX = x1 + (dx / dist) * (offset * 0.5);
+            const startY = y1 + (dy / dist) * (offset * 0.5);
+
+            return (
+              <g>
+                {/* Glow underlay line */}
+                <line
+                  x1={`${startX}%`}
+                  y1={`${startY}%`}
+                  x2={`${endX}%`}
+                  y2={`${endY}%`}
+                  stroke="#fbbf24"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  opacity="0.35"
+                />
+                {/* Crisp directional line with arrowhead */}
+                <line
+                  x1={`${startX}%`}
+                  y1={`${startY}%`}
+                  x2={`${endX}%`}
+                  y2={`${endY}%`}
+                  stroke="#f59e0b"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray="6,3"
+                  markerEnd="url(#last-move-arrowhead)"
+                  opacity="0.95"
+                />
+              </g>
+            );
+          })()}
+        </svg>
+      )}
 
       {/* Promotion Dialog (MD3 modal overlay) */}
       {promotingMove && (
