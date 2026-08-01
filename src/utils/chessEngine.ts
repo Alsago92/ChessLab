@@ -261,14 +261,20 @@ function getMoveOrderScore(move: Move): number {
 function quiescenceSearch(chess: Chess, alpha: number, beta: number, isMaximizing: boolean, depth = 0): number {
   const standPat = evaluateBoard(chess);
 
-  if (depth >= 4) return standPat; // Cap quiescence depth to avoid deep recursion
+  // Cap quiescence depth to 2 to keep search extremely fast & non-blocking
+  if (depth >= 2) return standPat;
+
+  const captures = chess
+    .moves({ verbose: true })
+    .filter((m) => m.captured || m.promotion)
+    .sort((a, b) => getMoveOrderScore(b) - getMoveOrderScore(a))
+    .slice(0, 5); // top 5 most valuable tactical captures
+
+  if (captures.length === 0) return standPat;
 
   if (isMaximizing) {
     if (standPat >= beta) return beta;
     if (standPat > alpha) alpha = standPat;
-
-    const captures = chess.moves({ verbose: true }).filter((m) => m.captured || m.promotion);
-    captures.sort((a, b) => getMoveOrderScore(b) - getMoveOrderScore(a));
 
     for (const move of captures) {
       chess.move(move);
@@ -283,9 +289,6 @@ function quiescenceSearch(chess: Chess, alpha: number, beta: number, isMaximizin
     if (standPat <= alpha) return alpha;
     if (standPat < beta) beta = standPat;
 
-    const captures = chess.moves({ verbose: true }).filter((m) => m.captured || m.promotion);
-    captures.sort((a, b) => getMoveOrderScore(b) - getMoveOrderScore(a));
-
     for (const move of captures) {
       chess.move(move);
       const score = quiescenceSearch(chess, alpha, beta, true, depth + 1);
@@ -298,6 +301,9 @@ function quiescenceSearch(chess: Chess, alpha: number, beta: number, isMaximizin
   }
 }
 
+let nodesCount = 0;
+let maxNodeBudget = 50000; // Expanded computation budget for Web Worker execution
+
 /**
  * Minimax with Alpha-Beta Pruning
  */
@@ -308,12 +314,14 @@ function minimax(
   beta: number,
   isMaximizing: boolean
 ): number {
-  if (depth === 0 || chess.isGameOver()) {
+  nodesCount++;
+
+  if (nodesCount >= maxNodeBudget || depth === 0 || chess.isGameOver()) {
     return quiescenceSearch(chess, alpha, beta, isMaximizing);
   }
 
   const moves = chess.moves({ verbose: true });
-  // Move ordering: sort captures and checks first
+  // Move ordering: sort captures and checks first to trigger immediate Alpha-Beta cutoffs
   moves.sort((a, b) => getMoveOrderScore(b) - getMoveOrderScore(a));
 
   if (isMaximizing) {
@@ -362,8 +370,11 @@ export function getBestEngineMove(chess: Chess, difficulty: number): EngineMoveR
   const currentTurn = chess.turn(); // 'w' or 'b'
   const isMaximizing = currentTurn === 'w';
 
+  // Reset node safety counter
+  nodesCount = 0;
+
   // 1. Check Opening Book for high difficulty levels (levels 4, 5, 6)
-  if (difficulty >= 4 && chess.history().length <= 12) {
+  if (difficulty >= 4 && chess.history().length <= 14) {
     const bookCandidates = OPENING_BOOK[currentFen];
     if (bookCandidates && bookCandidates.length > 0) {
       const chosenSan = bookCandidates[Math.floor(Math.random() * bookCandidates.length)];
@@ -379,41 +390,40 @@ export function getBestEngineMove(chess: Chess, difficulty: number): EngineMoveR
     }
   }
 
-  // 2. Map Difficulty level to search parameters
-  // Level 1: Depth 1 + 40% random move chance (Beginner 800 ELO)
-  // Level 2: Depth 2 + 20% random move chance (Easy 1200 ELO)
-  // Level 3: Depth 3 + 10% sub-optimal choice (Medium 1500 ELO)
-  // Level 4: Depth 4 + Quiescence (Hard 1800 ELO)
-  // Level 5: Depth 4 + Deep Quiescence (Expert 2200 ELO)
-  // Level 6: Depth 5 + Deep Quiescence + Alpha-Beta (Master / GM 2600 ELO)
-  
+  // 2. Map Difficulty level to search depth & node budgets
   let searchDepth = 3;
   let blunderProbability = 0;
 
   switch (difficulty) {
     case 1:
       searchDepth = 1;
-      blunderProbability = 0.40;
+      maxNodeBudget = 2000;
+      blunderProbability = 0.35;
       break;
     case 2:
       searchDepth = 2;
-      blunderProbability = 0.20;
+      maxNodeBudget = 5000;
+      blunderProbability = 0.15;
       break;
     case 3:
       searchDepth = 3;
-      blunderProbability = 0.08;
+      maxNodeBudget = 12000;
+      blunderProbability = 0.05;
       break;
     case 4:
       searchDepth = 4;
+      maxNodeBudget = 25000;
       blunderProbability = 0;
       break;
     case 5:
       searchDepth = 4;
+      maxNodeBudget = 40000;
       blunderProbability = 0;
       break;
     case 6:
     default:
-      searchDepth = 5; // Master Level: Depth 5 with Quiescence search
+      searchDepth = 5; // Master Level: Depth 5 with Quiescence & PST (2600 ELO)
+      maxNodeBudget = 70000;
       blunderProbability = 0;
       break;
   }

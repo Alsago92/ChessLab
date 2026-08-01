@@ -687,44 +687,103 @@ export default function App() {
     }
   };
 
-  // Advanced AI computer engine move logic
-  // Uses Minimax search + Alpha-Beta Pruning + Piece-Square Tables (PST) + Quiescence Search + Opening Book
+  const workerRef = useRef<Worker | null>(null);
+
+  // Initialize background AI Web Worker for zero-lag thread execution
+  useEffect(() => {
+    try {
+      workerRef.current = new Worker(new URL('./utils/aiWorker.ts', import.meta.url), { type: 'module' });
+    } catch (e) {
+      console.warn('Web Worker creation fallback:', e);
+    }
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Helper to calculate realistic thinking time (in ms) based on clock remaining & position
+  const calculateAiThinkTime = (chess: Chess, isBook: boolean, isOnlyMove: boolean): number => {
+    // If time scramble (< 20s remaining)
+    if (blackTime <= 20) {
+      return 400 + Math.random() * 600; // 0.4s - 1.0s
+    }
+
+    // Opening book moves are played quickly
+    if (isBook) {
+      return 1000 + Math.random() * 1000; // 1.0s - 2.0s
+    }
+
+    // Forced moves (only 1 legal move)
+    if (isOnlyMove) {
+      return 600 + Math.random() * 800; // 0.6s - 1.4s
+    }
+
+    // Scaled by remaining clock time
+    if (blackTime > 300) {
+      // Classical / Rapid (10m+): Think 2.5s - 5.5s
+      return 2500 + Math.random() * 3000;
+    } else if (blackTime > 100) {
+      // Blitz (3m - 5m): Think 1.5s - 3.5s
+      return 1500 + Math.random() * 2000;
+    } else {
+      // Short time (< 100s): Think 1.0s - 2.2s
+      return 1000 + Math.random() * 1200;
+    }
+  };
+
+  // Advanced AI computer engine move logic using Web Workers & Realistic Game Clock
   const triggerComputerMove = () => {
     if (gameStatus !== 'active') return;
     setIsEngineThinking(true);
 
-    setTimeout(() => {
-      const chess = chessRef.current;
-      const moves = chess.moves({ verbose: true });
+    const chess = chessRef.current;
+    const moves = chess.moves({ verbose: true });
 
-      if (moves.length === 0) {
-        setIsEngineThinking(false);
-        return;
-      }
+    if (moves.length === 0) {
+      setIsEngineThinking(false);
+      return;
+    }
 
-      // Exact level derived from selectedDifficulty or blackPlayer rating
-      const level = selectedDifficulty || (blackPlayer.rating >= 2400 ? 6 : blackPlayer.rating >= 2000 ? 5 : blackPlayer.rating >= 1700 ? 4 : blackPlayer.rating >= 1400 ? 3 : blackPlayer.rating >= 1100 ? 2 : 1);
+    const currentFen = chess.fen();
+    const level = selectedDifficulty || (blackPlayer.rating >= 2400 ? 6 : blackPlayer.rating >= 2000 ? 5 : blackPlayer.rating >= 1700 ? 4 : blackPlayer.rating >= 1400 ? 3 : blackPlayer.rating >= 1100 ? 2 : 1);
+    const startTime = Date.now();
 
-      const engineResult = getBestEngineMove(chess, level);
-      if (!engineResult) {
+    // Helper function to process AI result and apply move
+    const applyAiMoveResult = (engineResult: any) => {
+      if (!engineResult || !engineResult.move) {
         setIsEngineThinking(false);
         return;
       }
 
       const bestChoice = engineResult.move;
+      const isBook = !!engineResult.isBookMove;
+      const isOnly = moves.length === 1;
 
-      if (bestChoice) {
-        // Execute move
+      // Calculate realistic thinking time delay so the game clock ticks down naturally on Black's turn
+      const targetDelayMs = calculateAiThinkTime(chess, isBook, isOnly);
+      const elapsedTimeMs = Date.now() - startTime;
+      const remainingDelay = Math.max(200, targetDelayMs - elapsedTimeMs);
+
+      setTimeout(() => {
+        if (gameStatus !== 'active') {
+          setIsEngineThinking(false);
+          return;
+        }
+
         const moveRes = chess.move({
           from: bestChoice.from,
           to: bestChoice.to,
-          promotion: bestChoice.promotion || 'q', // default queen promotion for AI
+          promotion: bestChoice.promotion || 'q',
         });
 
-        // Play haptic click
+        // Play sound effects
         playChessSound(bestChoice.captured ? 'capture' : 'move', settings.soundEffects);
 
-        // Update history details
+        // Update move history
         const san = moveRes.san;
         const historyItem: MoveHistoryItem = {
           san,
@@ -738,10 +797,10 @@ export default function App() {
 
         setHistoryStack((prev) => [...prev, historyItem]);
         setLastMove({ from: bestChoice.from, to: bestChoice.to });
-        setRedoStack([]); // clear redo on new moves
+        setRedoStack([]);
         setActiveTurn('w');
 
-        // Check if computer put user in check
+        // Check alerts
         if (chess.inCheck()) {
           playChessSound('check', settings.soundEffects);
           addCoachMessage(settings.language === 'es' 
@@ -749,7 +808,7 @@ export default function App() {
             : 'Be careful! The computer has put your king in check!');
         }
 
-        // Coach comments
+        // Coach messaging
         if (engineResult.isBookMove) {
           addCoachMessage(settings.language === 'es'
             ? `El motor ha jugado una teoría de apertura de Gran Maestro (${san}).`
@@ -766,10 +825,30 @@ export default function App() {
 
         updateEngineState();
         simulateEngineAnalysis(chess.fen(), 'b');
-      }
+        setIsEngineThinking(false);
+      }, remainingDelay);
+    };
 
-      setIsEngineThinking(false);
-    }, 350 + Math.random() * 250); // fast realistic think timer
+    // Use Web Worker if available for zero UI blocking
+    if (workerRef.current) {
+      const handleWorkerMessage = (e: MessageEvent) => {
+        workerRef.current?.removeEventListener('message', handleWorkerMessage);
+        if (e.data.success && e.data.result) {
+          applyAiMoveResult(e.data.result);
+        } else {
+          // Fallback if worker fails
+          const fallbackRes = getBestEngineMove(chess, level);
+          applyAiMoveResult(fallbackRes);
+        }
+      };
+
+      workerRef.current.addEventListener('message', handleWorkerMessage);
+      workerRef.current.postMessage({ fen: currentFen, level });
+    } else {
+      // Synchronous fallback
+      const fallbackRes = getBestEngineMove(chess, level);
+      applyAiMoveResult(fallbackRes);
+    }
   };
 
   // Run AI movement automatically when turn changes to Black and Game Mode is VS Computer
@@ -787,8 +866,8 @@ export default function App() {
       const scoreInCentipawns = evaluateBoard(chess);
       const evalValue = Number((scoreInCentipawns / 100).toFixed(2));
 
-      // Get best continuation suggestion line
-      const engineRes = getBestEngineMove(chess, 4);
+      // Fast suggestion line using level 3 engine depth
+      const engineRes = getBestEngineMove(chess, 3);
       const bestLine = engineRes ? [engineRes.move.san] : chess.moves().slice(0, 2);
 
       const accuracies: EngineAnalysis['moveAccuracy'][] = ['best', 'excellent', 'good', 'book'];
@@ -803,7 +882,7 @@ export default function App() {
       });
 
       setIsEngineThinking(false);
-    }, 200);
+    }, 100);
   };
 
   // Square select and legal move queries
