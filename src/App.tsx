@@ -34,6 +34,7 @@ import { VersionControlModal } from './components/VersionControlModal';
 import { AnalysisToolbar } from './components/AnalysisToolbar';
 import { AnalysisLoadModal } from './components/AnalysisLoadModal';
 import { parsePgnGames, safelyLoadPgn } from './utils/pgnParser';
+import { getBestEngineMove, evaluateBoard } from './utils/chessEngine';
 
 // Custom lightweight sound synthesiser using Web Audio API
 const playChessSound = (type: 'move' | 'capture' | 'check' | 'gameover', allowed: boolean) => {
@@ -686,8 +687,8 @@ export default function App() {
     }
   };
 
-  // Heuristic-based computer engine move logic
-  // Selects best move based on: checks, captures, center development
+  // Advanced AI computer engine move logic
+  // Uses Minimax search + Alpha-Beta Pruning + Piece-Square Tables (PST) + Quiescence Search + Opening Book
   const triggerComputerMove = () => {
     if (gameStatus !== 'active') return;
     setIsEngineThinking(true);
@@ -701,55 +702,16 @@ export default function App() {
         return;
       }
 
-      // 1. Evaluate possible moves
-      const evaluatedMoves = moves.map((move) => {
-        let score = 0;
+      // Exact level derived from selectedDifficulty or blackPlayer rating
+      const level = selectedDifficulty || (blackPlayer.rating >= 2400 ? 6 : blackPlayer.rating >= 2000 ? 5 : blackPlayer.rating >= 1700 ? 4 : blackPlayer.rating >= 1400 ? 3 : blackPlayer.rating >= 1100 ? 2 : 1);
 
-        // Capture priority
-        if (move.captured) {
-          const captureWeights: Record<string, number> = { p: 10, n: 30, b: 30, r: 50, q: 90 };
-          score += (captureWeights[move.captured] || 10) * 10;
-        }
-
-        // Check incentive
-        if (move.san.includes('+')) {
-          score += 45;
-        }
-
-        // Center control (d4, d5, e4, e5 coordinates incentive)
-        const centerFiles = ['d', 'e'];
-        const centerRanks = ['4', '5'];
-        if (centerFiles.includes(move.to[0]) && centerRanks.includes(move.to[1])) {
-          score += 15;
-        }
-
-        // Promotion incentive
-        if (move.promotion) {
-          score += 80;
-        }
-
-        return { move, score };
-      });
-
-      // Sort by score and introduce occasional small random variability (based on difficulty!)
-      evaluatedMoves.sort((a, b) => b.score - a.score);
-
-      // Computer bot selection range based on ELO
-      // Level 1: Random. Level 3: Medium. Level 6: Master (always best).
-      let selectedIdx = 0;
-      const difficultyLevel = blackPlayer.rating > 2000 ? 6 : blackPlayer.rating > 1400 ? 3 : 1;
-
-      if (difficultyLevel === 1) {
-        selectedIdx = Math.floor(Math.random() * moves.length);
-      } else if (difficultyLevel === 3) {
-        // Choose from top 3
-        const range = Math.min(3, evaluatedMoves.length);
-        selectedIdx = Math.floor(Math.random() * range);
-      } else {
-        selectedIdx = 0; // Absolute best
+      const engineResult = getBestEngineMove(chess, level);
+      if (!engineResult) {
+        setIsEngineThinking(false);
+        return;
       }
 
-      const bestChoice = evaluatedMoves[selectedIdx]?.move || moves[Math.floor(Math.random() * moves.length)];
+      const bestChoice = engineResult.move;
 
       if (bestChoice) {
         // Execute move
@@ -788,7 +750,11 @@ export default function App() {
         }
 
         // Coach comments
-        if (bestChoice.captured) {
+        if (engineResult.isBookMove) {
+          addCoachMessage(settings.language === 'es'
+            ? `El motor ha jugado una teoría de apertura de Gran Maestro (${san}).`
+            : `Engine played standard Master Opening Book theory (${san}).`);
+        } else if (bestChoice.captured) {
           addCoachMessage(settings.language === 'es' 
             ? `¡El ordenador ha capturado tu ${bestChoice.captured.toUpperCase()}! Busca contraataques defensivos.` 
             : `The computer captured your ${bestChoice.captured.toUpperCase()}! Look for defensive counters.`);
@@ -803,7 +769,7 @@ export default function App() {
       }
 
       setIsEngineThinking(false);
-    }, 700 + Math.random() * 500); // realistic think timer
+    }, 350 + Math.random() * 250); // fast realistic think timer
   };
 
   // Run AI movement automatically when turn changes to Black and Game Mode is VS Computer
@@ -813,47 +779,31 @@ export default function App() {
     }
   }, [activeTurn, gameMode, gameStatus]);
 
-  // Helper to simulate Engine evaluation values
+  // Helper to run Engine evaluation analysis
   const simulateEngineAnalysis = (fen: string, playerColor: 'w' | 'b') => {
     setIsEngineThinking(true);
     setTimeout(() => {
-      // Calculate material balance
-      let wScore = 0;
-      let bScore = 0;
-      const weights: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-      
-      const currentBoard = chessRef.current.board();
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
-          const piece = currentBoard[r][c];
-          if (piece) {
-            if (piece.color === 'w') wScore += weights[piece.type] || 0;
-            else bScore += weights[piece.type] || 0;
-          }
-        }
-      }
+      const chess = chessRef.current;
+      const scoreInCentipawns = evaluateBoard(chess);
+      const evalValue = Number((scoreInCentipawns / 100).toFixed(2));
 
-      const balance = wScore - bScore;
-      // Inject slight random decimal for authenticity
-      const score = balance + (Math.random() * 0.8 - 0.4);
-
-      // Suggestions lines
-      const moves = chessRef.current.moves();
-      const bestLine = moves.slice(0, 3);
+      // Get best continuation suggestion line
+      const engineRes = getBestEngineMove(chess, 4);
+      const bestLine = engineRes ? [engineRes.move.san] : chess.moves().slice(0, 2);
 
       const accuracies: EngineAnalysis['moveAccuracy'][] = ['best', 'excellent', 'good', 'book'];
       const accuracy = accuracies[Math.floor(Math.random() * accuracies.length)];
 
       setEngineAnalysis({
-        evalScore: score,
+        evalScore: evalValue,
         bestContinuation: bestLine,
         moveAccuracy: accuracy,
-        suggestedMoves: bestLine.slice(0, 2),
-        threats: ['f7 attack', 'backrank weakness'],
+        suggestedMoves: bestLine,
+        threats: chess.inCheck() ? ['In Check! Protect King'] : [],
       });
 
       setIsEngineThinking(false);
-    }, 400);
+    }, 200);
   };
 
   // Square select and legal move queries

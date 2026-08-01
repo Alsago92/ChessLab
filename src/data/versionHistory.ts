@@ -14,9 +14,48 @@ export interface VersionInfo {
   changes: VersionChange[];
 }
 
-export const CURRENT_VERSION = '1.3.0';
+export const CURRENT_VERSION = '1.3.1';
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    version: '1.3.1',
+    date: '2026-08-01',
+    title: {
+      en: 'Upgraded AI Engine with Minimax Search, Alpha-Beta Pruning & Quiescence Evaluation',
+      es: 'Motor de IA Mejorado con Búsqueda Minimax, Poda Alfa-Beta y Búsqueda de Quietud',
+    },
+    type: 'patch',
+    isCurrent: true,
+    changes: [
+      {
+        category: 'improvement',
+        icon: 'psychology',
+        title: { en: 'Grandmaster-Level Minimax & Alpha-Beta Engine', es: 'Motor Minimax y Poda Alfa-Beta Nivel Gran Maestro' },
+        description: {
+          en: 'Replaced simple 1-ply heuristics with deep Minimax search and Alpha-Beta pruning up to depth 5+, making Master difficulty (2600 ELO) truly challenging.',
+          es: 'Reemplazado el selector de 1 jugada por búsqueda profunda Minimax y poda Alfa-Beta hasta profundidad 5+, elevando el nivel Maestro (2600 ELO) a una dificultad verdaderamente competitiva.',
+        },
+      },
+      {
+        category: 'feature',
+        icon: 'analytics',
+        title: { en: 'Piece-Square Tables & Quiescence Search', es: 'Tablas Pieza-Casilla y Búsqueda de Quietud' },
+        description: {
+          en: 'Integrated positional Piece-Square Tables (PST) for opening/endgame strategy and Quiescence capture extensions to prevent horizon blunders.',
+          es: 'Integradas tablas posicionales Pieza-Casilla (PST) para estrategia de aperturas/finales y extensiones de quietud para evitar colgadas tácticas.',
+        },
+      },
+      {
+        category: 'feature',
+        icon: 'menu_book',
+        title: { en: 'Master Opening Book Integration', es: 'Integración del Libro de Aperturas de Maestros' },
+        description: {
+          en: 'High level AI bots (Levels 4-6) now execute instant master opening responses (Sicilian, Ruy Lopez, Queen’s Gambit, etc.).',
+          es: 'Los bots de alto nivel (Niveles 4-6) ejecutan respuestas de teoría de aperturas de Gran Maestro (Siciliana, Ruy López, Gambito de Dama, etc.).',
+        },
+      },
+    ],
+  },
   {
     version: '1.3.0',
     date: '2026-07-24',
@@ -25,7 +64,7 @@ export const VERSION_HISTORY: VersionInfo[] = [
       es: 'Módulo Completo de Tablero de Análisis con Explorador de Aperturas y Carga FEN/PGN',
     },
     type: 'minor',
-    isCurrent: true,
+    isCurrent: false,
     changes: [
       {
         category: 'feature',
